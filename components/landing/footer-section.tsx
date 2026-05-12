@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 
-const LINKS = {
+type FooterLink = {
+  name: string;
+  href: string;
+  badge?: string;
+};
+
+const LINKS: Record<string, FooterLink[]> = {
   PLATFORM: [
     { name: "App Console",     href: "#console" },
     { name: "Features",        href: "#features" },

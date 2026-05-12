@@ -65,36 +65,56 @@ Open `http://localhost:3000`.
 
 ## Wave Roadmap
 
-### Wave 1 - Concept and Prototype
+### 01 - Wave 1
 
-- Landing page with preserved animated hero style.
-- Live app control room.
-- Wallet connect plus simulation wallet fallback.
+Concept and prototype.
+
+Status: **Built**  
+Target: **Ready for Wave 1 demo**
+
+- Landing page and app console.
+- Wallet connect plus simulation wallet.
+- Live SoSoValue market intelligence.
 - Live DefiLlama APY discovery.
-- Live SoSoValue news and ETF flow integration.
-- Live SoDEX public market pulse.
-- OpenAI-generated strategy memo, deterministic scoring, recommendation, reasoning, and simulated rebalancing.
-- README and setup documentation.
+- SoDEX public market pulse.
+- OpenAI strategy memo, AI reasoning, and rebalance logs.
 
-### Wave 2 - Functional MVP
+Primary demo action: open the app, analyze the market, activate the simulation, and test a protective exit.
 
-- Persist user portfolios in a database.
-- Add historical APY, risk, and allocation charts.
-- Stream real-time updates through WebSockets or server events.
-- Add alerts for TVL drops, volatility spikes, and negative sentiment.
-- Expand protocol coverage and strategy constraints.
-- Add richer OpenAI-powered natural-language explanations and chat follow-ups.
-- Add stronger testing around the scoring engine.
+### 02 - Wave 2
 
-### Wave 3 - Advanced Product
+Functional MVP.
 
-- Smart contract integration for approved execution.
-- User-defined rules such as max drawdown, stablecoin only, and blocked protocols.
-- AI chat assistant for questions like "Why did you exit Pendle?"
-- Strategy marketplace for shared AI strategies.
-- Multi-chain support.
-- Mobile responsive polish.
-- Security review, audits, and guarded production rollout.
+Status: **Next**  
+Target: **Functional MVP**
+
+- Portfolio tracking database.
+- Real-time market updates.
+- Notifications and alerts.
+- Risk scoring history.
+- Better analytics charts.
+- More DeFi protocol coverage.
+- Deeper OpenAI-assisted explanations.
+
+Primary goal: make the portfolio and risk engine persistent, observable, and useful over time.
+
+### 03 - Wave 3
+
+Advanced product.
+
+Status: **Vision**  
+Target: **Production direction**
+
+- Smart contract execution.
+- Optional auto-rebalance approvals.
+- AI chat assistant.
+- Custom user rules.
+- Strategy marketplace.
+- Multi-chain expansion.
+- Mobile polish.
+- Security review and audits.
+
+Primary goal: move from a safe simulation prototype toward a reviewed, user-approved autonomous DeFi wealth manager.
 
 ## Safety Note
 

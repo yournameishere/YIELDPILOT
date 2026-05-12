@@ -125,10 +125,12 @@ export function CtaSection() {
                 <span className="transition-transform group-hover:translate-x-1">-&gt;</span>
               </a>
               <a
-                href="#roadmap"
+                href="https://github.com/yournameishere/YIELDPILOT#readme"
+                target="_blank"
+                rel="noreferrer"
                 className="group inline-flex items-center gap-4 border border-[#2e2e2e] text-[#5a5a5a] font-mono text-sm tracking-widest px-8 py-5 hover:border-[#2196f3]/40 hover:text-[#2196f3] transition-colors"
               >
-                VIEW ROADMAP
+                READ README
                 <span className="transition-transform group-hover:translate-x-1">-&gt;</span>
               </a>
             </div>
@@ -139,7 +141,7 @@ export function CtaSection() {
                 { v: "3",      l: "live sources" },
                 { v: "0",      l: "funds moved" },
                 { v: "5",      l: "strategy goals" },
-                { v: "W3",     l: "roadmap" },
+                { v: "AI",     l: "risk memo" },
               ].map(s => (
                 <div key={s.l} className="text-center">
                   <div className="font-display text-2xl text-[#2196f3]">{s.v}</div>

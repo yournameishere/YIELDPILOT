@@ -14,13 +14,13 @@ const LINKS = {
     { name: "API Route",       href: "#developers" },
     { name: "SoDEX Docs",      href: "https://sodex.com/documentation" },
     { name: "SoSoValue API",   href: "https://sosovalue-1.gitbook.io/sosovalue-api-doc" },
-    { name: "README",          href: "#roadmap" },
+    { name: "README",          href: "https://github.com/yournameishere/YIELDPILOT#readme" },
     { name: "Source Health",   href: "#console" },
   ],
   COMPANY: [
-    { name: "Wave 1",          href: "#roadmap" },
-    { name: "Wave 2",          href: "#roadmap" },
-    { name: "Wave 3",          href: "#roadmap", badge: "VISION" },
+    { name: "Live Demo",       href: "#console" },
+    { name: "Market Engine",   href: "#developers" },
+    { name: "Risk Model",      href: "#security" },
     { name: "Demo",            href: "#console" },
   ],
   LEGAL: [

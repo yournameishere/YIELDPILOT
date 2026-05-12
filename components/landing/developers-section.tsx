@@ -119,7 +119,7 @@ export function DevelopersSection() {
               <a href="https://sodex.com/documentation" target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#2196f3] tracking-wider hover:underline">
                 SODEX DOCS -&gt;
               </a>
-              <a href="#roadmap" className="font-mono text-[11px] text-[#5a5a5a] tracking-wider hover:text-[#f2ede6] transition-colors">
+              <a href="https://github.com/yournameishere/YIELDPILOT#readme" target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#5a5a5a] tracking-wider hover:text-[#f2ede6] transition-colors">
                 README -&gt;
               </a>
             </div>

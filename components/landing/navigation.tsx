@@ -11,7 +11,6 @@ const navLinks = [
   { name: "METRICS",      href: "#metrics" },
   { name: "DATA",         href: "#integrations" },
   { name: "SECURITY",     href: "#security" },
-  { name: "ROADMAP",      href: "#roadmap" },
 ];
 
 export function Navigation() {

@@ -10,6 +10,7 @@ The app is simulation-first. It does not move real funds in Wave 1. Users can co
 - Reads SoSoValue market intelligence for hot crypto news and BTC/ETH ETF flow signals.
 - Reads SoDEX public spot ticker data from the testnet endpoint.
 - Scores opportunities by APY, TVL depth, stablecoin exposure, impermanent-loss risk, prediction confidence, protocol reputation, and market volatility.
+- Uses OpenAI Responses API to generate the strategy memo from the live market payload.
 - Builds a portfolio allocation for Safe Yield, Balanced Growth, Aggressive Yield, Stablecoin Only, or AI Custom Strategy.
 - Explains why each allocation was chosen.
 - Simulates strategy activation and protective exits without custody risk.
@@ -37,6 +38,7 @@ Most crypto users compare APY manually and often miss risk signals like thin TVL
 - DefiLlama Yields API
 - SoSoValue OpenAPI
 - SoDEX public market data
+- OpenAI Responses API
 
 ## Environment
 
@@ -44,11 +46,13 @@ Create `.env.local` from `.env.example`:
 
 ```bash
 SOSOVALUE_API_KEY=your_sosovalue_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4.1-mini
 SODEX_ENV=testnet
 SODEX_SPOT_ENDPOINT=https://testnet-gw.sodex.dev/api/v1/spot
 ```
 
-Do not commit real API keys. The SoSoValue key is read only on the server inside `/api/yieldpilot/market`.
+Do not commit real API keys. SoSoValue and OpenAI keys are read only on the server inside `/api/yieldpilot/market`.
 
 ## Run Locally
 
@@ -69,7 +73,7 @@ Open `http://localhost:3000`.
 - Live DefiLlama APY discovery.
 - Live SoSoValue news and ETF flow integration.
 - Live SoDEX public market pulse.
-- AI-style scoring, recommendation, reasoning, and simulated rebalancing.
+- OpenAI-generated strategy memo, deterministic scoring, recommendation, reasoning, and simulated rebalancing.
 - README and setup documentation.
 
 ### Wave 2 - Functional MVP
@@ -79,7 +83,7 @@ Open `http://localhost:3000`.
 - Stream real-time updates through WebSockets or server events.
 - Add alerts for TVL drops, volatility spikes, and negative sentiment.
 - Expand protocol coverage and strategy constraints.
-- Add optional OpenAI-powered natural-language explanations.
+- Add richer OpenAI-powered natural-language explanations and chat follow-ups.
 - Add stronger testing around the scoring engine.
 
 ### Wave 3 - Advanced Product

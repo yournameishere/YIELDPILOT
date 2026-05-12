@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  BrainCircuit,
   Gauge,
   Play,
   Radar,
@@ -293,13 +294,30 @@ export function YieldPilotConsole() {
 
               <div>
                 <div className="p-6 border-b border-[#1e1e1e]">
-                  <span className="sys-tag text-[9px] mb-3 block">REASONING FEED</span>
+                  <span className="sys-tag text-[9px] mb-3 block">OPENAI STRATEGY MEMO</span>
+                  <div className="flex items-center gap-2 mb-4 font-mono text-[9px] tracking-widest text-[#3a3a3a]">
+                    <BrainCircuit className="w-3.5 h-3.5 text-[#2196f3]" />
+                    <span>{data?.ai.model ?? "OPENAI_MODEL_PENDING"}</span>
+                    <span className={data?.ai.status === "live" ? "text-[#22c55e]" : "text-[#f59e0b]"}>
+                      {data?.ai.status?.toUpperCase() ?? "SCANNING"}
+                    </span>
+                  </div>
                   <div className="space-y-3">
-                    {(data?.strategy.rationale ?? ["Waiting for live market scan."]).map((line) => (
-                      <p key={line} className="text-sm text-[#5a5a5a] leading-relaxed">
-                        {line}
-                      </p>
-                    ))}
+                    {data ? (
+                      [
+                        data.ai.headline,
+                        data.ai.summary,
+                        data.ai.recommendation,
+                        data.ai.riskNote,
+                        data.ai.nextAction,
+                      ].map((line) => (
+                        <p key={line} className="text-sm text-[#5a5a5a] leading-relaxed">
+                          {line}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-[#5a5a5a] leading-relaxed">Waiting for live OpenAI strategy reasoning.</p>
+                    )}
                   </div>
                 </div>
 

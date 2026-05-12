@@ -829,7 +829,7 @@ async function getOpenAiInsight(
           model,
           instructions:
             "You are YieldPilot AI, an autonomous DeFi yield risk analyst. Use only the supplied JSON. Do not invent protocols, APYs, prices, or news. This is simulation-only and not financial advice. Return strict JSON only with keys: headline, summary, recommendation, riskNote, nextAction.",
-          input: `Create a concise strategy explanation from this live payload:\n${JSON.stringify(promptPayload)}`,
+          input: `Create a concise strategy explanation from this live payload. Return only valid JSON in this exact shape: {"headline":"...","summary":"...","recommendation":"...","riskNote":"...","nextAction":"..."}\n${JSON.stringify(promptPayload)}`,
           max_output_tokens: 420,
           temperature: 0.2,
         }),

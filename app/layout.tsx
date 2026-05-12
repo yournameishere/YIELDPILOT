@@ -26,6 +26,25 @@ export const metadata: Metadata = {
   title: 'YieldPilot AI - Autonomous DeFi Yield Manager',
   description: 'A Wave 1 prototype that scans live DeFi yields, SoSoValue market intelligence, and SoDEX data to simulate safer AI-driven allocation strategies.',
   keywords: ['DeFi yield', 'AI yield manager', 'SoSoValue', 'SoDEX', 'DefiLlama', 'crypto portfolio'],
+  applicationName: 'YieldPilot AI',
+  authors: [{ name: 'YieldPilot AI' }],
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/apple-icon.png',
+  },
+  manifest: '/manifest.webmanifest',
+  openGraph: {
+    title: 'YieldPilot AI - Autonomous DeFi Yield Manager',
+    description: 'Live DeFi yield discovery, SoSoValue intelligence, SoDEX market pulse, and OpenAI strategy reasoning.',
+    type: 'website',
+    siteName: 'YieldPilot AI',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'YieldPilot AI',
+    description: 'Autonomous DeFi yield manager for safer simulated rebalancing.',
+  },
 }
 
 export const viewport: Viewport = {

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+const REPOSITORY_URL = process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim();
+
 function DotWaveCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -112,7 +114,7 @@ export function CtaSection() {
             </h2>
 
             <p className="font-mono text-sm text-[#5a5a5a] mb-12 max-w-lg mx-auto leading-relaxed">
-              Run a complete Wave 1 demo: connect a wallet or simulation wallet, analyze live markets, activate a strategy, and test a protective exit.
+              Run a complete Wave 2 demo: tune custom constraints, analyze live markets, save local portfolio snapshots, activate a strategy, and test a protective exit.
             </p>
 
             {/* CTAs */}
@@ -125,12 +127,12 @@ export function CtaSection() {
                 <span className="transition-transform group-hover:translate-x-1">-&gt;</span>
               </a>
               <a
-                href="https://github.com/yournameishere/YIELDPILOT#readme"
-                target="_blank"
-                rel="noreferrer"
+                href={REPOSITORY_URL ? `${REPOSITORY_URL}#readme` : "#developers"}
+                target={REPOSITORY_URL ? "_blank" : undefined}
+                rel={REPOSITORY_URL ? "noreferrer" : undefined}
                 className="group inline-flex items-center gap-4 border border-[#2e2e2e] text-[#5a5a5a] font-mono text-sm tracking-widest px-8 py-5 hover:border-[#2196f3]/40 hover:text-[#2196f3] transition-colors"
               >
-                READ README
+                {REPOSITORY_URL ? "READ README" : "LOCAL README"}
                 <span className="transition-transform group-hover:translate-x-1">-&gt;</span>
               </a>
             </div>

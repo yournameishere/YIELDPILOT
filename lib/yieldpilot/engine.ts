@@ -4,10 +4,15 @@ import type {
   MarketPulse,
   NewsItem,
   OpenAiInsight,
+  RebalanceDecision,
   RiskEvent,
   SourceStatus,
+  SosoIndexSnapshot,
   SodexTicker,
   StrategyAllocation,
+  StrategyAlert,
+  StrategyAnalytics,
+  StrategyConstraints,
   StrategyGoal,
   YieldOpportunity,
   YieldPilotMarketResponse,
@@ -29,6 +34,15 @@ const SODEX_ENDPOINTS = {
   },
 };
 
+const CACHE_TTL = {
+  defillamaPools: 45_000,
+  sosoMarket: 75_000,
+  sodexTickers: 15_000,
+  openAiInsight: 60_000,
+};
+
+const memoryCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+
 const GOAL_CONFIG: Record<
   StrategyGoal,
   {
@@ -40,6 +54,9 @@ const GOAL_CONFIG: Record<
     yieldBias: number;
     riskPenalty: number;
     allocationPower: number;
+    maxPositions: number;
+    rebalanceThresholdPct: number;
+    alertRiskScore: number;
   }
 > = {
   safe: {
@@ -51,6 +68,9 @@ const GOAL_CONFIG: Record<
     yieldBias: 0.75,
     riskPenalty: 1.25,
     allocationPower: 0.9,
+    maxPositions: 3,
+    rebalanceThresholdPct: 7,
+    alertRiskScore: 45,
   },
   balanced: {
     label: "Balanced Growth",
@@ -61,6 +81,9 @@ const GOAL_CONFIG: Record<
     yieldBias: 1,
     riskPenalty: 0.9,
     allocationPower: 1,
+    maxPositions: 3,
+    rebalanceThresholdPct: 10,
+    alertRiskScore: 58,
   },
   aggressive: {
     label: "Aggressive Yield",
@@ -71,6 +94,9 @@ const GOAL_CONFIG: Record<
     yieldBias: 1.35,
     riskPenalty: 0.55,
     allocationPower: 1.2,
+    maxPositions: 4,
+    rebalanceThresholdPct: 14,
+    alertRiskScore: 72,
   },
   stablecoin: {
     label: "Stablecoin Only",
@@ -81,6 +107,9 @@ const GOAL_CONFIG: Record<
     yieldBias: 0.9,
     riskPenalty: 1.05,
     allocationPower: 0.95,
+    maxPositions: 3,
+    rebalanceThresholdPct: 8,
+    alertRiskScore: 50,
   },
   custom: {
     label: "AI Custom Strategy",
@@ -91,6 +120,9 @@ const GOAL_CONFIG: Record<
     yieldBias: 1.05,
     riskPenalty: 0.85,
     allocationPower: 1.05,
+    maxPositions: 4,
+    rebalanceThresholdPct: 10,
+    alertRiskScore: 60,
   },
 };
 
@@ -179,6 +211,21 @@ interface SosoEtfRaw {
   total_net_assets?: number;
 }
 
+interface SosoIndexRaw {
+  price?: number | string;
+  "24h_change_pct"?: number | string;
+  change_pct_24h?: number | string;
+  "7day_roi"?: number | string;
+  roi_7d?: number | string;
+  "1month_roi"?: number | string;
+  roi_1m?: number | string;
+  "3month_roi"?: number | string;
+  roi_3m?: number | string;
+  "1year_roi"?: number | string;
+  roi_1y?: number | string;
+  ytd?: number | string;
+}
+
 interface SodexEnvelope<T> {
   code?: number;
   timestamp?: number;
@@ -212,6 +259,7 @@ interface OpenAiDecisionJson {
   recommendation?: string;
   riskNote?: string;
   nextAction?: string;
+  reasoning?: string[];
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -223,6 +271,15 @@ function round(value: number, digits = 2) {
   return Math.round(value * factor) / factor;
 }
 
+function formatUsdForText(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function asNumber(value: unknown, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -230,6 +287,30 @@ function asNumber(value: unknown, fallback = 0) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
+}
+
+function hashText(input: string) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+async function withTtlCache<T>(key: string, ttlMs: number, factory: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const cached = memoryCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+
+  const rawPromise = factory();
+  const cachedPromise = rawPromise.catch((error) => {
+    const current = memoryCache.get(key);
+    if (current?.promise === cachedPromise) memoryCache.delete(key);
+    throw error;
+  });
+
+  memoryCache.set(key, { expiresAt: now + ttlMs, promise: cachedPromise });
+  return cachedPromise;
 }
 
 function displayName(value: string | undefined) {
@@ -251,6 +332,16 @@ function stripHtml(input: string | undefined) {
     .trim();
 }
 
+function safeHttpsUrl(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function compactSummary(input: string | undefined, max = 190) {
   const text = stripHtml(input);
   if (text.length <= max) return text;
@@ -261,6 +352,39 @@ function compactLine(input: string | undefined, fallback: string, max = 170) {
   const text = (input ?? "").replace(/\s+/g, " ").trim();
   if (!text) return fallback;
   return text.length <= max ? text : `${text.slice(0, max).trim()}...`;
+}
+
+export function sanitizeSecretBearingError(detail: string, service = "Data source") {
+  if (/incorrect api key|invalid api key|401/i.test(detail)) {
+    return `${service} authentication failed. Check the local server environment value without exposing it in the UI.`;
+  }
+
+  return detail
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+    .replace(/(x-soso-api-key["'\s:=]+)[A-Za-z0-9._-]+/gi, "$1[redacted]")
+    .replace(/(api[_-]?key["'\s:=]+)[A-Za-z0-9._-]{16,}/gi, "$1[redacted]")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted_openai_key]")
+    .replace(/SOSO-[A-Za-z0-9_-]+/g, "[redacted_sosovalue_key]");
+}
+
+function asBoolean(value: string | null, fallback: boolean) {
+  if (value === null) return fallback;
+  if (value === "true" || value === "1" || value === "yes") return true;
+  if (value === "false" || value === "0" || value === "no") return false;
+  return fallback;
+}
+
+function goalConstraints(goal: StrategyGoal): StrategyConstraints {
+  const config = GOAL_CONFIG[goal];
+  return {
+    stableOnly: config.stableOnly,
+    maxRisk: config.maxRisk,
+    maxApy: config.maxApy,
+    minTvlUsd: config.minTvlUsd,
+    maxPositions: config.maxPositions,
+    rebalanceThresholdPct: config.rebalanceThresholdPct,
+    alertRiskScore: config.alertRiskScore,
+  };
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = 12_000): Promise<T> {
@@ -280,7 +404,9 @@ async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = 12_000)
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`HTTP ${response.status}: ${body.slice(0, 180)}`);
+      const retryAfter = response.headers.get("retry-after");
+      const retryNotice = retryAfter ? ` retry-after=${retryAfter}s` : "";
+      throw new Error(`HTTP ${response.status}${retryNotice}: ${body.slice(0, 180)}`);
     }
 
     return (await response.json()) as T;
@@ -343,7 +469,7 @@ function buildNotes(pool: DefiLlamaPool, riskScore: number) {
   return notes.length > 0 ? notes : ["Live APY and TVL scanned"];
 }
 
-function opportunityScore(pool: DefiLlamaPool, riskScore: number, goal: StrategyGoal) {
+function opportunityScoring(pool: DefiLlamaPool, riskScore: number, goal: StrategyGoal): YieldOpportunity["scoring"] {
   const config = GOAL_CONFIG[goal];
   const apy = asNumber(pool.apy);
   const tvlUsd = asNumber(pool.tvlUsd);
@@ -351,14 +477,39 @@ function opportunityScore(pool: DefiLlamaPool, riskScore: number, goal: Strategy
   const reputation = REPUTATION_BONUS[pool.project ?? ""] ?? 0;
   const stableBonus = pool.stablecoin ? 7 : 0;
   const predictionBonus = pool.predictions?.predictedClass?.includes("Stable") ? 3 : 0;
+  const riskPenalty = riskScore * config.riskPenalty;
+  const sourceSignals = [
+    "DefiLlama APY/TVL",
+    pool.predictions ? "DefiLlama prediction class" : "Live pool metadata",
+    pool.stablecoin ? "Stablecoin exposure" : "Volatile asset exposure",
+    (REPUTATION_BONUS[pool.project ?? ""] ?? 0) > 0 ? "Protocol reputation map" : "Protocol reputation neutral",
+  ];
+
+  return {
+    yieldComponent: round(apy * config.yieldBias, 3),
+    tvlComponent: round(tvlScore, 3),
+    reputationComponent: reputation,
+    stabilityComponent: stableBonus,
+    predictionComponent: predictionBonus,
+    riskPenalty: round(riskPenalty, 3),
+    sourceSignals,
+  };
+}
+
+function opportunityScore(pool: DefiLlamaPool, riskScore: number, goal: StrategyGoal) {
+  const scoring = opportunityScoring(pool, riskScore, goal);
   return round(
-    apy * config.yieldBias + tvlScore + reputation + stableBonus + predictionBonus - riskScore * config.riskPenalty,
+    scoring.yieldComponent +
+      scoring.tvlComponent +
+      scoring.reputationComponent +
+      scoring.stabilityComponent +
+      scoring.predictionComponent -
+      scoring.riskPenalty,
     3,
   );
 }
 
-function normalizeOpportunities(pools: DefiLlamaPool[], goal: StrategyGoal) {
-  const config = GOAL_CONFIG[goal];
+function normalizeOpportunities(pools: DefiLlamaPool[], goal: StrategyGoal, constraints: StrategyConstraints) {
 
   return pools
     .filter((pool) => {
@@ -366,15 +517,16 @@ function normalizeOpportunities(pools: DefiLlamaPool[], goal: StrategyGoal) {
       const tvlUsd = asNumber(pool.tvlUsd);
       if (!pool.project || !pool.symbol || !pool.chain || !pool.pool) return false;
       if (!PREFERRED_CHAINS.has(pool.chain)) return false;
-      if (config.stableOnly && !pool.stablecoin) return false;
-      if (tvlUsd < config.minTvlUsd) return false;
-      if (apy <= 0.15 || apy > config.maxApy) return false;
+      if (constraints.stableOnly && !pool.stablecoin) return false;
+      if (tvlUsd < constraints.minTvlUsd) return false;
+      if (apy <= 0.15 || apy > constraints.maxApy) return false;
       if (pool.outlier) return false;
       return true;
     })
     .map((pool): YieldOpportunity => {
       const riskScore = scoreRisk(pool);
       const score = opportunityScore(pool, riskScore, goal);
+      const scoring = opportunityScoring(pool, riskScore, goal);
 
       return {
         id: pool.pool ?? `${pool.project}-${pool.chain}-${pool.symbol}`,
@@ -391,15 +543,16 @@ function normalizeOpportunities(pools: DefiLlamaPool[], goal: StrategyGoal) {
         exposure: pool.exposure ?? "unknown",
         confidence: Math.round(asNumber(pool.predictions?.predictedProbability, 50)),
         notes: buildNotes(pool, riskScore),
+        scoring,
       };
     })
-    .filter((opportunity) => opportunity.riskScore <= config.maxRisk)
+    .filter((opportunity) => opportunity.riskScore <= constraints.maxRisk)
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
 }
 
-function buildAllocation(opportunities: YieldOpportunity[], amountUsd: number, goal: StrategyGoal) {
-  const selected = opportunities.slice(0, goal === "aggressive" ? 4 : 3);
+function buildAllocation(opportunities: YieldOpportunity[], amountUsd: number, goal: StrategyGoal, constraints: StrategyConstraints) {
+  const selected = opportunities.slice(0, constraints.maxPositions);
   const config = GOAL_CONFIG[goal];
   const scoreBase = selected.map((opportunity) =>
     Math.max(1, Math.pow(Math.max(opportunity.score + 50, 1), config.allocationPower)),
@@ -427,6 +580,11 @@ function buildAllocation(opportunities: YieldOpportunity[], amountUsd: number, g
       apy: opportunity.apy,
       riskScore: opportunity.riskScore,
       reason: reasonParts.join(", "),
+      evidence: [
+        `${opportunity.apy}% APY after ${opportunity.riskScore}/100 risk penalty`,
+        `${formatUsdForText(opportunity.tvlUsd)} TVL depth`,
+        opportunity.notes.slice(0, 2).join("; "),
+      ],
     };
   });
 }
@@ -478,7 +636,7 @@ function normalizeNews(rawPage: SosoNewsPage | undefined): NewsItem[] {
     return {
       id: String(item.id ?? item.title ?? timestamp),
       title: item.title ?? "Untitled SoSoValue item",
-      sourceLink: item.source_link ?? "https://sosovalue.com",
+      sourceLink: safeHttpsUrl(item.source_link, "https://sosovalue.com"),
       releaseTime: new Date(timestamp).toISOString(),
       summary: compactSummary(item.content, 220),
     };
@@ -492,6 +650,28 @@ function normalizeEtfFlows(symbol: string, rawRows: SosoEtfRaw[] | undefined): E
     netInflowUsd: round(asNumber(row.total_net_inflow), 2),
     totalAssetsUsd: round(asNumber(row.total_net_assets), 2),
   }));
+}
+
+function firstNumber(row: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = asNumber(row?.[key], Number.NaN);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function normalizeSosoIndex(ticker: string, row: SosoIndexRaw | undefined): SosoIndexSnapshot {
+  const record = row as Record<string, unknown> | undefined;
+
+  return {
+    ticker,
+    price: round(asNumber(row?.price), 4),
+    change24hPct: round(firstNumber(record, ["24h_change_pct", "change_pct_24h"]) * 100, 3),
+    roi7d: round(firstNumber(record, ["7day_roi", "roi_7d"]) * 100, 3),
+    roi1m: round(firstNumber(record, ["1month_roi", "roi_1m"]) * 100, 3),
+    roi3m: round(firstNumber(record, ["3month_roi", "roi_3m"]) * 100, 3),
+    ytd: round(asNumber(row?.ytd) * 100, 3),
+  };
 }
 
 function normalizeSodexTickers(rows: SodexTickerRaw[] | undefined): SodexTicker[] {
@@ -518,9 +698,15 @@ function unwrapSoso<T>(payload: SosoEnvelope<T> | T): T {
   return payload as T;
 }
 
-async function getDefiLlamaOpportunities(goal: StrategyGoal) {
-  const payload = await fetchJson<DefiLlamaPoolsResponse>(DEFILLAMA_POOLS_URL, undefined, 15_000);
-  return normalizeOpportunities(payload.data ?? [], goal);
+async function getDefiLlamaPools() {
+  return withTtlCache("defillama:pools", CACHE_TTL.defillamaPools, () =>
+    fetchJson<DefiLlamaPoolsResponse>(DEFILLAMA_POOLS_URL, undefined, 15_000),
+  );
+}
+
+async function getDefiLlamaOpportunities(goal: StrategyGoal, constraints: StrategyConstraints) {
+  const payload = await getDefiLlamaPools();
+  return normalizeOpportunities(payload.data ?? [], goal, constraints);
 }
 
 async function getSosoMarket(apiKey: string | undefined) {
@@ -535,12 +721,14 @@ async function getSosoMarket(apiKey: string | undefined) {
       source,
       news: [] as NewsItem[],
       etfFlows: [] as EtfFlowPoint[],
+      indexes: [] as SosoIndexSnapshot[],
     };
   }
 
+  return withTtlCache(`soso:market:${hashText(apiKey)}`, CACHE_TTL.sosoMarket, async () => {
   try {
     const headers = { "x-soso-api-key": apiKey };
-    const [newsPayload, btcPayload, ethPayload] = await Promise.all([
+    const [newsResult, btcResult, ethResult, indexListResult] = await Promise.allSettled([
       fetchJson<SosoEnvelope<SosoNewsPage>>(
         `${SOSOVALUE_BASE_URL}/news/hot?page=1&page_size=8&language=en`,
         { headers },
@@ -556,42 +744,136 @@ async function getSosoMarket(apiKey: string | undefined) {
         { headers },
         12_000,
       ),
+      fetchJson<SosoEnvelope<string[]>>(`${SOSOVALUE_BASE_URL}/indices`, { headers }, 12_000),
     ]);
 
-    const news = normalizeNews(unwrapSoso(newsPayload));
+    const failedParts: string[] = [];
+    const failureText = (error: unknown) =>
+      sanitizeSecretBearingError(error instanceof Error ? error.message : "request failed", "SoSoValue");
+    const readPart = <T>(part: string, result: PromiseSettledResult<SosoEnvelope<T>>, fallback: T) => {
+      try {
+        if (result.status !== "fulfilled") throw result.reason;
+        const data = unwrapSoso(result.value);
+        if (data === undefined || data === null) throw new Error(`${part} returned no data.`);
+        return data;
+      } catch (error) {
+        failedParts.push(`${part}: ${failureText(error)}`);
+        return fallback;
+      }
+    };
+
+    const news = normalizeNews(readPart("hot news", newsResult, undefined as SosoNewsPage | undefined));
     const etfFlows = [
-      ...normalizeEtfFlows("BTC", unwrapSoso(btcPayload)),
-      ...normalizeEtfFlows("ETH", unwrapSoso(ethPayload)),
+      ...normalizeEtfFlows("BTC", readPart("BTC ETF flow", btcResult, [] as SosoEtfRaw[])),
+      ...normalizeEtfFlows("ETH", readPart("ETH ETF flow", ethResult, [] as SosoEtfRaw[])),
     ];
+    const indexTickers = readPart("index list", indexListResult, [] as string[]).slice(0, 3);
+    const resolvedTickers = indexTickers.length > 0 ? indexTickers : ["ssimag7"];
+    const fetchIndexSnapshot = (ticker: string) =>
+      fetchJson<SosoEnvelope<SosoIndexRaw>>(
+        `${SOSOVALUE_BASE_URL}/indices/${encodeURIComponent(ticker)}/market-snapshot`,
+        { headers },
+        12_000,
+      ).then((payload) => normalizeSosoIndex(ticker, unwrapSoso(payload)));
+    const indexPayloads = await Promise.allSettled(
+      resolvedTickers.map((ticker) => fetchIndexSnapshot(ticker)),
+    );
+    let indexes = indexPayloads
+      .filter((result): result is PromiseFulfilledResult<SosoIndexSnapshot> => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failedIndexSnapshots = indexPayloads.length - indexes.length;
+    if (failedIndexSnapshots > 0) {
+      failedParts.push(`${failedIndexSnapshots} index snapshot${failedIndexSnapshots === 1 ? "" : "s"}`);
+    }
+    if (indexes.length === 0 && !resolvedTickers.includes("ssimag7")) {
+      try {
+        indexes = [await fetchIndexSnapshot("ssimag7")];
+      } catch {
+        failedParts.push("fallback ssimag7 index snapshot");
+      }
+    }
+    const status: SourceStatus =
+      failedParts.length === 0 ? "live" : news.length > 0 || etfFlows.length > 0 || indexes.length > 0 ? "degraded" : "error";
+    const detail =
+      status === "live"
+        ? `Hot crypto news, BTC/ETH ETF flows, and ${indexes.length} SoSoValue Index snapshots are live.`
+        : status === "degraded"
+          ? `Partial SoSoValue data is live: ${news.length} news items, ${etfFlows.length} ETF rows, and ${indexes.length}/${resolvedTickers.length} index snapshots. Degraded parts: ${failedParts
+              .map((part) => part.split(":")[0])
+              .slice(0, 4)
+              .join(", ")}.`
+          : `SoSoValue returned no usable data. ${failedParts[0] ?? "Check API key and network access."}`;
 
     return {
       source: {
         name: "SoSoValue",
-        status: "live" as const,
-        detail: "Hot crypto news plus BTC/ETH ETF flow summaries are live.",
+        status,
+        detail,
         updatedAt: new Date().toISOString(),
       },
       news,
       etfFlows,
+      indexes,
     };
   } catch (error) {
     return {
       source: {
         name: "SoSoValue",
         status: "error" as const,
-        detail: error instanceof Error ? error.message : "SoSoValue request failed.",
+        detail: sanitizeSecretBearingError(error instanceof Error ? error.message : "SoSoValue request failed.", "SoSoValue"),
       },
       news: [] as NewsItem[],
       etfFlows: [] as EtfFlowPoint[],
+      indexes: [] as SosoIndexSnapshot[],
+    };
+  }
+  });
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function resolveSodexSpotEndpoint() {
+  const env = process.env.SODEX_ENV === "mainnet" ? "mainnet" : "testnet";
+  const fallback = SODEX_ENDPOINTS[env].spot;
+  const configuredEndpoint = process.env.SODEX_SPOT_ENDPOINT?.trim();
+
+  if (!configuredEndpoint) {
+    return { env, spotEndpoint: fallback, endpointNotice: "" };
+  }
+
+  try {
+    const url = new URL(configuredEndpoint);
+    const allowedOrigins = new Set(Object.values(SODEX_ENDPOINTS).map((endpoint) => new URL(endpoint.spot).origin));
+    const path = trimTrailingSlash(url.pathname);
+    const isAllowedEndpoint = url.protocol === "https:" && allowedOrigins.has(url.origin) && path === "/api/v1/spot";
+
+    if (!isAllowedEndpoint) {
+      return {
+        env,
+        spotEndpoint: fallback,
+        endpointNotice: "Configured SODEX_SPOT_ENDPOINT was rejected; using the known SoDEX spot endpoint.",
+      };
+    }
+
+    url.pathname = path;
+    url.search = "";
+    url.hash = "";
+    return { env, spotEndpoint: trimTrailingSlash(url.toString()), endpointNotice: "" };
+  } catch {
+    return {
+      env,
+      spotEndpoint: fallback,
+      endpointNotice: "Configured SODEX_SPOT_ENDPOINT was invalid; using the known SoDEX spot endpoint.",
     };
   }
 }
 
 async function getSodexTickers() {
-  const env = process.env.SODEX_ENV === "mainnet" ? "mainnet" : "testnet";
-  const configuredEndpoint = process.env.SODEX_SPOT_ENDPOINT;
-  const spotEndpoint = configuredEndpoint ?? SODEX_ENDPOINTS[env].spot;
+  const { env, spotEndpoint, endpointNotice } = resolveSodexSpotEndpoint();
 
+  return withTtlCache(`sodex:${env}:${spotEndpoint}`, CACHE_TTL.sodexTickers, async () => {
   try {
     const payload = await fetchJson<SodexEnvelope<SodexTickerRaw[]>>(`${spotEndpoint}/markets/tickers`, undefined, 12_000);
     if (payload.code !== 0) throw new Error("SoDEX ticker request returned a non-zero code.");
@@ -600,7 +882,7 @@ async function getSodexTickers() {
       source: {
         name: "SoDEX",
         status: "live" as const,
-        detail: `${env} public spot ticker feed is live.`,
+        detail: `${endpointNotice ? `${endpointNotice} ` : ""}${env} public spot ticker feed is live.`,
         updatedAt: new Date(payload.timestamp ?? Date.now()).toISOString(),
       },
       tickers: normalizeSodexTickers(payload.data),
@@ -610,14 +892,23 @@ async function getSodexTickers() {
       source: {
         name: "SoDEX",
         status: "error" as const,
-        detail: error instanceof Error ? error.message : "SoDEX ticker request failed.",
+        detail: sanitizeSecretBearingError(
+          `${endpointNotice ? `${endpointNotice} ` : ""}${error instanceof Error ? error.message : "SoDEX ticker request failed."}`,
+          "SoDEX",
+        ),
       },
       tickers: [] as SodexTicker[],
     };
   }
+  });
 }
 
-function buildMarketPulse(news: NewsItem[], etfFlows: EtfFlowPoint[], sodexTickers: SodexTicker[]): MarketPulse {
+function buildMarketPulse(
+  news: NewsItem[],
+  etfFlows: EtfFlowPoint[],
+  sodexTickers: SodexTicker[],
+  sosoIndexes: SosoIndexSnapshot[],
+): MarketPulse {
   const newsSentiment = sentimentFromNews(news);
   const latestBySymbol = new Map<string, EtfFlowPoint>();
   for (const point of etfFlows) {
@@ -636,12 +927,15 @@ function buildMarketPulse(news: NewsItem[], etfFlows: EtfFlowPoint[], sodexTicke
     sodexTickers.length === 0
       ? 0
       : sodexTickers.reduce((sum, ticker) => sum + Math.abs(ticker.changePct), 0) / sodexTickers.length;
+  const indexAverageMovePct =
+    sosoIndexes.length === 0 ? 0 : sosoIndexes.reduce((sum, index) => sum + index.change24hPct, 0) / sosoIndexes.length;
 
   const moodScore = clamp(
     50 +
       newsSentiment * 0.22 +
       clamp(etfNetFlowUsd / 100_000_000, -16, 16) +
-      clamp(sodexAverageMovePct * 2.2, -12, 12),
+      clamp(sodexAverageMovePct * 2.2, -12, 12) +
+      clamp(indexAverageMovePct * 1.5, -8, 8),
     0,
     100,
   );
@@ -661,6 +955,7 @@ function buildMarketPulse(news: NewsItem[], etfFlows: EtfFlowPoint[], sodexTicke
     news,
     etfFlows,
     sodexTickers,
+    sosoIndexes,
   };
 }
 
@@ -701,9 +996,9 @@ function buildRiskEvents(
   }
 
   for (const source of sources) {
-    if (source.status === "error" || source.status === "missing_key") {
+    if (source.status === "error" || source.status === "missing_key" || source.status === "degraded") {
       events.push({
-        level: source.status === "error" ? "warning" : "info",
+        level: source.status === "error" ? "warning" : source.status === "degraded" ? "watch" : "info",
         title: `${source.name} source ${source.status === "missing_key" ? "not configured" : "degraded"}`,
         detail: source.detail,
       });
@@ -750,6 +1045,11 @@ function deterministicInsight(
       ? `Market mood is ${market.moodLabel.toLowerCase()}, SoDEX volatility is ${market.volatilityLabel.toLowerCase()}, and the top watched pool risk is ${bestPool.riskScore}/100.`
       : `Market mood is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} volatility, but no allocation passed filters.`,
     nextAction: detail,
+    reasoning: [
+      `Constraint gate: max risk ${strategy.constraints.maxRisk}, min TVL ${formatUsdForText(strategy.constraints.minTvlUsd)}, max APY ${strategy.constraints.maxApy}%.`,
+      `Market gate: ${market.moodLabel} mood, ${market.volatilityLabel} SoDEX volatility, ${market.etfFlowDirection} ETF flow.`,
+      top ? `Allocation gate: ${top.protocol} leads because ${top.reason}.` : "Allocation gate: no pool passed the selected constraints.",
+    ],
   };
 }
 
@@ -802,6 +1102,8 @@ async function getOpenAiInsight(
       blendedRisk: strategy.riskScore,
       dailyYieldUsd: strategy.dailyYieldUsd,
       allocation: strategy.allocation,
+      constraints: strategy.constraints,
+      rebalanceDecisions: strategy.rebalanceDecisions,
     },
     market: {
       mood: market.moodLabel,
@@ -811,11 +1113,15 @@ async function getOpenAiInsight(
       etfNetFlowUsd: market.etfNetFlowUsd,
       sodexAverageMovePct: market.sodexAverageMovePct,
       latestNews: market.news.slice(0, 3).map((item) => item.title),
+      sosoIndexes: market.sosoIndexes.slice(0, 3),
       topSodexTickers: market.sodexTickers.slice(0, 4),
     },
     topOpportunities: opportunities.slice(0, 5),
   };
 
+  const cacheKey = `openai:${model}:${hashText(JSON.stringify(promptPayload))}`;
+
+  return withTtlCache(cacheKey, CACHE_TTL.openAiInsight, async () => {
   try {
     const response = await fetchJson<OpenAiResponsePayload>(
       `${OPENAI_BASE_URL}/responses`,
@@ -828,9 +1134,12 @@ async function getOpenAiInsight(
         body: JSON.stringify({
           model,
           instructions:
-            "You are YieldPilot AI, an autonomous DeFi yield risk analyst. Use only the supplied JSON. Do not invent protocols, APYs, prices, or news. This is simulation-only and not financial advice. Return strict JSON only with keys: headline, summary, recommendation, riskNote, nextAction.",
-          input: `Create a concise strategy explanation from this live payload. Return only valid JSON in this exact shape: {"headline":"...","summary":"...","recommendation":"...","riskNote":"...","nextAction":"..."}\n${JSON.stringify(promptPayload)}`,
-          max_output_tokens: 420,
+            "You are YieldPilot AI, an autonomous DeFi yield risk analyst. Use only the supplied JSON. Do not invent protocols, APYs, prices, or news. This is simulation-only and not financial advice. Return strict JSON only.",
+          input: `Create a concise strategy explanation from this live payload. Return only valid JSON in this exact shape: {"headline":"...","summary":"...","recommendation":"...","riskNote":"...","nextAction":"...","reasoning":["constraint reason","market reason","rebalance reason"]}\n${JSON.stringify(promptPayload)}`,
+          text: {
+            format: { type: "json_object" },
+          },
+          max_output_tokens: 520,
           temperature: 0.2,
         }),
       },
@@ -842,6 +1151,11 @@ async function getOpenAiInsight(
     const text = extractOpenAiText(response);
     const parsed = parseOpenAiDecision(text);
     const resolvedModel = response.model ?? model;
+    const fallback = deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel);
+    const reasoning = (Array.isArray(parsed.reasoning) ? parsed.reasoning : [])
+      .map((line) => compactLine(line, "", 150))
+      .filter(Boolean)
+      .slice(0, 4);
 
     return {
       source: {
@@ -854,22 +1168,23 @@ async function getOpenAiInsight(
         provider: "OpenAI",
         model: resolvedModel,
         status: "live",
-        headline: compactLine(parsed.headline, deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel).headline, 90),
-        summary: compactLine(parsed.summary, deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel).summary),
+        headline: compactLine(parsed.headline, fallback.headline, 90),
+        summary: compactLine(parsed.summary, fallback.summary),
         recommendation: compactLine(
           parsed.recommendation,
-          deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel).recommendation,
+          fallback.recommendation,
         ),
-        riskNote: compactLine(parsed.riskNote, deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel).riskNote),
+        riskNote: compactLine(parsed.riskNote, fallback.riskNote),
         nextAction: compactLine(
           parsed.nextAction,
           "Activate the simulation only after reviewing the allocation and source health.",
           150,
         ),
+        reasoning: reasoning.length > 0 ? reasoning : fallback.reasoning,
       },
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "OpenAI request failed.";
+    const detail = sanitizeSecretBearingError(error instanceof Error ? error.message : "OpenAI request failed.", "OpenAI");
     return {
       source: {
         name: "OpenAI",
@@ -886,6 +1201,7 @@ async function getOpenAiInsight(
       ),
     };
   }
+  });
 }
 
 function buildStrategy(
@@ -893,8 +1209,9 @@ function buildStrategy(
   amountUsd: number,
   opportunities: YieldOpportunity[],
   market: MarketPulse,
+  constraints: StrategyConstraints,
 ): YieldPilotStrategy {
-  const allocation = buildAllocation(opportunities, amountUsd, goal);
+  const allocation = buildAllocation(opportunities, amountUsd, goal, constraints);
   const estimatedApy =
     allocation.length === 0 ? 0 : allocation.reduce((sum, item) => sum + (item.apy * item.weight) / 100, 0);
   const riskScore =
@@ -903,6 +1220,7 @@ function buildStrategy(
 
   const rationale = [
     `Goal profile: ${GOAL_CONFIG[goal].label}.`,
+    `User constraints: max risk ${constraints.maxRisk}, min TVL ${formatUsdForText(constraints.minTvlUsd)}, max APY ${constraints.maxApy}%, ${constraints.stableOnly ? "stablecoins only" : "volatile assets allowed"}.`,
     `Market mood is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} volatility.`,
     `Allocation favors live APY after TVL, protocol reputation, and instability penalties.`,
   ];
@@ -914,6 +1232,7 @@ function buildStrategy(
   return {
     goal,
     goalLabel: GOAL_CONFIG[goal].label,
+    constraints,
     estimatedApy: round(estimatedApy, 2),
     riskScore: Math.round(riskScore),
     dailyYieldUsd: round(dailyYieldUsd, 2),
@@ -922,7 +1241,181 @@ function buildStrategy(
     rebalanceActions: allocation.map(
       (item) => `Allocate ${item.weight}% to ${item.protocol} ${item.asset} on ${item.chain} because ${item.reason}.`,
     ),
+    rebalanceDecisions: buildRebalanceDecisions(allocation, opportunities, market, constraints),
   };
+}
+
+function buildRebalanceDecisions(
+  allocation: StrategyAllocation[],
+  opportunities: YieldOpportunity[],
+  market: MarketPulse,
+  constraints: StrategyConstraints,
+) {
+  const decisions: RebalanceDecision[] = allocation.map((item, index) => ({
+    id: `allocate-${index}-${item.protocol}-${item.asset}`,
+    action: "allocate" as const,
+    title: `Allocate ${item.weight}% to ${item.protocol}`,
+    detail: `${item.asset} on ${item.chain} passed custom constraints and earns ${item.apy}% APY with ${item.riskScore}/100 risk.`,
+    evidence: item.evidence,
+    source: "DefiLlama + YieldPilot risk engine",
+    impact: "positive" as const,
+  }));
+
+  const riskiest = opportunities.find((item) => item.riskScore >= constraints.alertRiskScore);
+  if (riskiest) {
+    decisions.push({
+      id: `protect-${riskiest.id}`,
+      action: riskiest.riskScore >= constraints.maxRisk ? "exit_ready" : "reduce",
+      title: `${riskiest.protocol} is capped by risk`,
+      detail: `${riskiest.asset} is attractive, but risk ${riskiest.riskScore}/100 is above the alert threshold ${constraints.alertRiskScore}.`,
+      evidence: [
+        `${riskiest.apy}% APY`,
+        `${formatUsdForText(riskiest.tvlUsd)} TVL`,
+        riskiest.notes.join("; "),
+      ],
+      source: "Risk alert threshold",
+      impact: "protective" as const,
+    });
+  }
+
+  if (market.volatilityLabel === "Elevated" || market.etfFlowDirection === "outflow") {
+    decisions.push({
+      id: "market-protection",
+      action: "hold",
+      title: "Protective monitor armed",
+      detail: `Market pulse is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} SoDEX volatility and ${market.etfFlowDirection} ETF flow.`,
+      evidence: [
+        `SoDEX average move ${market.sodexAverageMovePct}%`,
+        `ETF net flow ${formatUsdForText(market.etfNetFlowUsd)}`,
+      ],
+      source: "SoSoValue + SoDEX market pulse",
+      impact: "protective" as const,
+    });
+  }
+
+  return decisions.slice(0, 6);
+}
+
+function buildRiskHistory(strategy: YieldPilotStrategy, market: MarketPulse) {
+  const baseRisk = strategy.riskScore || strategy.constraints.maxRisk;
+  const baseApy = strategy.estimatedApy;
+  const points = [
+    { label: "T-4", riskOffset: 8, apyOffset: -1.1 },
+    { label: "T-3", riskOffset: 4, apyOffset: -0.4 },
+    { label: "T-2", riskOffset: 2, apyOffset: 0.2 },
+    { label: "T-1", riskOffset: market.volatilityLabel === "Elevated" ? 7 : -1, apyOffset: 0.4 },
+    { label: "Now", riskOffset: 0, apyOffset: 0 },
+  ];
+
+  return points.map((point) => ({
+    label: point.label,
+    riskScore: clamp(Math.round(baseRisk + point.riskOffset), 0, 100),
+    estimatedApy: round(Math.max(0, baseApy + point.apyOffset), 2),
+    marketMood: point.label === "Now" ? market.moodLabel : point.riskOffset > 5 ? "Risk-Off" : "Neutral",
+  }));
+}
+
+function buildAlerts(
+  strategy: YieldPilotStrategy,
+  market: MarketPulse,
+  opportunities: YieldOpportunity[],
+  sources: DataSourceStatus[],
+): StrategyAlert[] {
+  const alerts: StrategyAlert[] = [];
+
+  if (strategy.riskScore >= strategy.constraints.alertRiskScore) {
+    alerts.push({
+      id: "portfolio-risk-threshold",
+      level: "warning",
+      title: "Portfolio risk threshold crossed",
+      detail: `Blended risk is ${strategy.riskScore}/100 against an alert threshold of ${strategy.constraints.alertRiskScore}.`,
+      trigger: "custom alertRiskScore",
+    });
+  }
+
+  const thinPool = opportunities.find((item) => item.tvlUsd < strategy.constraints.minTvlUsd * 1.25);
+  if (thinPool) {
+    alerts.push({
+      id: `thin-liquidity-${thinPool.id}`,
+      level: "watch",
+      title: "Liquidity buffer is narrow",
+      detail: `${thinPool.protocol} is close to the minimum TVL gate at ${formatUsdForText(thinPool.tvlUsd)}.`,
+      trigger: "minTvlUsd buffer",
+    });
+  }
+
+  if (market.etfFlowDirection === "outflow" || market.volatilityLabel === "Elevated") {
+    alerts.push({
+      id: "market-stress",
+      level: market.volatilityLabel === "Elevated" ? "warning" : "watch",
+      title: "Market stress monitor",
+      detail: `ETF flow is ${market.etfFlowDirection}; SoDEX volatility is ${market.volatilityLabel.toLowerCase()}.`,
+      trigger: "SoSoValue ETF + SoDEX pulse",
+    });
+  }
+
+  for (const source of sources) {
+    if (source.status === "error" || source.status === "missing_key" || source.status === "degraded") {
+      alerts.push({
+        id: `source-${source.name}`,
+        level: source.status === "error" ? "warning" : source.status === "degraded" ? "watch" : "info",
+        title: `${source.name} source health`,
+        detail: source.detail,
+        trigger: "source status",
+      });
+    }
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      id: "portfolio-clear",
+      level: "info",
+      title: "No active alert",
+      detail: "The simulated strategy is inside the selected risk, TVL, APY, and market-stress thresholds.",
+      trigger: "all wave 2 monitors",
+    });
+  }
+
+  return alerts.slice(0, 6);
+}
+
+function buildAnalytics(strategy: YieldPilotStrategy, amountUsd: number, market: MarketPulse): StrategyAnalytics {
+  const projectedAnnualYieldUsd = (amountUsd * strategy.estimatedApy) / 100;
+  const stressMultiplier =
+    market.volatilityLabel === "Elevated" ? 0.18 : market.etfFlowDirection === "outflow" ? 0.12 : 0.07;
+  const stressLossPct = round(clamp((strategy.riskScore / 100) * stressMultiplier * 100, 1.5, 22), 2);
+  const uniqueChains = new Set(strategy.allocation.map((item) => item.chain)).size;
+  const diversificationScore = clamp(Math.round(uniqueChains * 18 + strategy.allocation.length * 12), 0, 100);
+  const confidenceScore = clamp(
+    Math.round(100 - strategy.riskScore * 0.55 + diversificationScore * 0.25 + (market.moodScore - 50) * 0.2),
+    0,
+    100,
+  );
+
+  return {
+    projectedMonthlyYieldUsd: round(projectedAnnualYieldUsd / 12, 2),
+    projectedAnnualYieldUsd: round(projectedAnnualYieldUsd, 2),
+    stressLossUsd: round((amountUsd * stressLossPct) / 100, 2),
+    stressLossPct,
+    confidenceScore,
+    diversificationScore,
+    backtestNote:
+      "Local Wave 2 backtest proxy compares the current allocation against synthetic recent risk states from live APY, TVL, ETF flow, SoDEX volatility, and source health. It is simulation evidence, not realized performance.",
+  };
+}
+
+function buildSnapshots(strategy: YieldPilotStrategy, amountUsd: number, market: MarketPulse, generatedAt: string) {
+  return [
+    {
+      id: `snapshot-${generatedAt}`,
+      timestamp: generatedAt,
+      totalValueUsd: amountUsd,
+      estimatedApy: strategy.estimatedApy,
+      dailyYieldUsd: strategy.dailyYieldUsd,
+      riskScore: strategy.riskScore,
+      marketMood: market.moodLabel,
+    },
+  ];
 }
 
 export function normalizeGoal(value: string | null): StrategyGoal {
@@ -937,11 +1430,32 @@ export function normalizeAmount(value: string | null) {
   return clamp(Math.round(amount * 100) / 100, 100, 1_000_000);
 }
 
-export async function buildYieldPilotMarket(goal: StrategyGoal, amountUsd: number): Promise<YieldPilotMarketResponse> {
+export function normalizeConstraints(searchParams: URLSearchParams, goal: StrategyGoal): StrategyConstraints {
+  const defaults = goalConstraints(goal);
+  return {
+    stableOnly: asBoolean(searchParams.get("stableOnly"), defaults.stableOnly),
+    maxRisk: clamp(Math.round(asNumber(searchParams.get("maxRisk"), defaults.maxRisk)), 15, 90),
+    maxApy: clamp(round(asNumber(searchParams.get("maxApy"), defaults.maxApy), 1), 3, 80),
+    minTvlUsd: clamp(Math.round(asNumber(searchParams.get("minTvlUsd"), defaults.minTvlUsd)), 500_000, 500_000_000),
+    maxPositions: clamp(Math.round(asNumber(searchParams.get("maxPositions"), defaults.maxPositions)), 1, 6),
+    rebalanceThresholdPct: clamp(
+      round(asNumber(searchParams.get("rebalanceThresholdPct"), defaults.rebalanceThresholdPct), 1),
+      2,
+      30,
+    ),
+    alertRiskScore: clamp(Math.round(asNumber(searchParams.get("alertRiskScore"), defaults.alertRiskScore)), 20, 95),
+  };
+}
+
+export async function buildYieldPilotMarket(
+  goal: StrategyGoal,
+  amountUsd: number,
+  constraints = goalConstraints(goal),
+): Promise<YieldPilotMarketResponse> {
   const sourceStatuses: DataSourceStatus[] = [];
 
   const [opportunitiesResult, sosoResult, sodexResult] = await Promise.allSettled([
-    getDefiLlamaOpportunities(goal),
+    getDefiLlamaOpportunities(goal, constraints),
     getSosoMarket(process.env.SOSOVALUE_API_KEY),
     getSodexTickers(),
   ]);
@@ -959,7 +1473,7 @@ export async function buildYieldPilotMarket(goal: StrategyGoal, amountUsd: numbe
     sourceStatuses.push({
       name: "DefiLlama Yields",
       status: "error",
-      detail: opportunitiesResult.reason instanceof Error ? opportunitiesResult.reason.message : "Yield fetch failed.",
+      detail: sanitizeSecretBearingError(opportunitiesResult.reason instanceof Error ? opportunitiesResult.reason.message : "Yield fetch failed.", "DefiLlama"),
     });
   }
 
@@ -970,10 +1484,11 @@ export async function buildYieldPilotMarket(goal: StrategyGoal, amountUsd: numbe
           source: {
             name: "SoSoValue",
             status: "error" as const,
-            detail: sosoResult.reason instanceof Error ? sosoResult.reason.message : "SoSoValue request failed.",
+            detail: sanitizeSecretBearingError(sosoResult.reason instanceof Error ? sosoResult.reason.message : "SoSoValue request failed.", "SoSoValue"),
           },
           news: [] as NewsItem[],
           etfFlows: [] as EtfFlowPoint[],
+          indexes: [] as SosoIndexSnapshot[],
         };
 
   const sodex =
@@ -983,25 +1498,29 @@ export async function buildYieldPilotMarket(goal: StrategyGoal, amountUsd: numbe
           source: {
             name: "SoDEX",
             status: "error" as const,
-            detail: sodexResult.reason instanceof Error ? sodexResult.reason.message : "SoDEX request failed.",
+            detail: sanitizeSecretBearingError(sodexResult.reason instanceof Error ? sodexResult.reason.message : "SoDEX request failed.", "SoDEX"),
           },
           tickers: [] as SodexTicker[],
         };
 
   sourceStatuses.push(soso.source, sodex.source);
 
-  const market = buildMarketPulse(soso.news, soso.etfFlows, sodex.tickers);
-  const strategy = buildStrategy(goal, amountUsd, opportunities, market);
+  const market = buildMarketPulse(soso.news, soso.etfFlows, sodex.tickers, soso.indexes);
+  const strategy = buildStrategy(goal, amountUsd, opportunities, market, constraints);
   const openAi = await getOpenAiInsight(strategy, market, opportunities);
   sourceStatuses.push(openAi.source);
   const riskEvents = buildRiskEvents(market, opportunities, sourceStatuses);
+  const generatedAt = new Date().toISOString();
+  const alerts = buildAlerts(strategy, market, opportunities, sourceStatuses);
+  const analytics = buildAnalytics(strategy, amountUsd, market);
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     mode: "simulation",
     inputs: {
       amountUsd,
       goal,
+      constraints,
     },
     portfolio: {
       totalValueUsd: amountUsd,
@@ -1017,6 +1536,12 @@ export async function buildYieldPilotMarket(goal: StrategyGoal, amountUsd: numbe
     opportunities,
     market,
     riskEvents,
+    wave2: {
+      snapshots: buildSnapshots(strategy, amountUsd, market, generatedAt),
+      riskHistory: buildRiskHistory(strategy, market),
+      alerts,
+      analytics,
+    },
     sources: sourceStatuses,
   };
 }

@@ -28,7 +28,7 @@ const TESTIMONIALS = [
     metricLabel: "NEWS FEED",
   },
   {
-    quote: "The app keeps all real execution in simulation for Wave 1, which makes the demo safer and keeps the AI decision loop visible.",
+    quote: "The app keeps all real execution in simulation for Wave 2, while local snapshots, alerts, and reasoning make the AI decision loop visible.",
     author: "Execution Mode",
     role: "Safety",
     company: "NO_CUSTODY",

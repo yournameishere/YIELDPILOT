@@ -15,7 +15,7 @@ const STEPS = [
   maxRisk: 58
 }
 
-// Wallet connect is optional for Wave 1`,
+// Wallet connect is optional for Wave 2`,
   },
   {
     id: "02",
@@ -42,7 +42,7 @@ const STEPS = [
   protectiveExit: true
 })
 
-// Wave 1 proves the intelligence loop`,
+// Wave 2 proves the observable strategy loop`,
   },
 ];
 

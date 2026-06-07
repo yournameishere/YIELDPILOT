@@ -21,7 +21,7 @@ const FEATURES = [
     id: "03",
     tag: "AUTOMATION",
     title: "SIMULATED\nREBALANCING",
-    desc: "Users can activate a strategy in simulation mode, stream allocation actions, and test protective exits without exposing real funds during the hackathon prototype.",
+    desc: "Users can activate a strategy in simulation mode, stream allocation reasoning, save local portfolio snapshots, and test protective exits without exposing real funds.",
     stat: { v: "0", l: "custody risk" },
   },
   {
@@ -118,7 +118,7 @@ export function FeaturesSection() {
               </h2>
             </div>
             <p className="font-mono text-[10px] text-[#3a3a3a] tracking-widest max-w-[200px] text-right hidden lg:block">
-              FOUR WAVE 1 MODULES &nbsp;/ &nbsp;LIVE DATA &nbsp;/ &nbsp;SIMULATION-FIRST
+              WAVE 2 MODULES &nbsp;/ &nbsp;LIVE DATA &nbsp;/ &nbsp;SIMULATION-FIRST
             </p>
           </div>
         </div>

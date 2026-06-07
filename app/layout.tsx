@@ -24,7 +24,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: 'YieldPilot AI - Autonomous DeFi Yield Manager',
-  description: 'A Wave 1 prototype that scans live DeFi yields, SoSoValue market intelligence, and SoDEX data to simulate safer AI-driven allocation strategies.',
+  description: 'A Wave 2 local MVP that scans live DeFi yields, SoSoValue market intelligence, SoSoValue Indexes, and SoDEX data to simulate safer AI-driven allocation strategies.',
   keywords: ['DeFi yield', 'AI yield manager', 'SoSoValue', 'SoDEX', 'DefiLlama', 'crypto portfolio'],
   applicationName: 'YieldPilot AI',
   authors: [{ name: 'YieldPilot AI' }],

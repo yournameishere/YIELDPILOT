@@ -1,32 +1,34 @@
 # YieldPilot AI
 
-YieldPilot AI is an autonomous DeFi yield manager built for Wave 1. It helps users answer one hard question: where can I place capital for better yield without blindly chasing risky APY?
+YieldPilot AI is a Wave 2 MVP for simulated DeFi yield management. It scans live yield markets, market intelligence, ETF flow signals, SoSoValue Indexes, and SoDEX ticker activity, then builds a transparent simulated allocation with risk scoring and AI-assisted reasoning.
 
-The app is simulation-first. It does not move real funds in Wave 1. Users can connect a wallet or use a simulation wallet, choose a strategy goal, scan live markets, review the AI allocation plan, activate a simulated rebalance, and test a protective exit.
+The app is simulation-first. It never moves real funds. Wallet connection is approval-context only, and strategy activation writes local simulation logs instead of executing transactions.
 
-## What It Does
+## Core Features
 
-- Discovers live DeFi yield pools from DefiLlama.
-- Reads SoSoValue market intelligence for hot crypto news and BTC/ETH ETF flow signals.
-- Reads SoDEX public spot ticker data from the testnet endpoint.
-- Scores opportunities by APY, TVL depth, stablecoin exposure, impermanent-loss risk, prediction confidence, protocol reputation, and market volatility.
-- Uses OpenAI Responses API to generate the strategy memo from the live market payload.
-- Builds a portfolio allocation for Safe Yield, Balanced Growth, Aggressive Yield, Stablecoin Only, or AI Custom Strategy.
-- Explains why each allocation was chosen.
-- Simulates strategy activation and protective exits without custody risk.
+- Live DeFi yield discovery from DefiLlama.
+- SoSoValue hot news, BTC/ETH ETF flow intelligence, and SoSoValue Index snapshots.
+- SoDEX public spot ticker pulse from the configured testnet or mainnet endpoint.
+- OpenAI Responses API strategy memo with deterministic fallback reasoning when the model call is unavailable.
+- Strategy modes for Safe Yield, Balanced Growth, Aggressive Yield, Stablecoin Only, and AI Custom Strategy.
+- Custom constraints for max risk, max APY, min TVL, max positions, stablecoin-only mode, rebalance threshold, and alert threshold.
+- Transparent scoring by yield, TVL, reputation, stability, prediction signal, and risk penalty.
+- Local browser persistence for portfolio snapshots, scan risk history, and simulation activity.
+- Source-health reporting for DefiLlama, SoSoValue, SoDEX, and OpenAI.
+- Exportable strategy memo JSON for judge review or demo notes.
 
-## Why It Matters
+## Wave 2 Improvements
 
-Most crypto users compare APY manually and often miss risk signals like thin TVL, volatile markets, negative news, or whale-style exits. YieldPilot acts like a transparent AI fund manager: it finds yield, filters danger, explains decisions, and keeps the user in control.
-
-## How It Works
-
-1. User enters simulated capital and chooses a goal.
-2. The Next.js API route calls live data sources.
-3. The market engine filters and scores yield pools.
-4. The app builds a risk-adjusted allocation.
-5. The UI displays portfolio metrics, AI rationale, market intelligence, SoDEX pulse, source health, and risk events.
-6. The user can activate the strategy in simulation mode and test a protective exit.
+- Reworked the console into an app-style workspace with Strategy, Risk, Analytics, and Sources tabs.
+- Added provider and route-level caching so repeated scans do not rapidly exhaust SoSoValue or OpenAI quota.
+- Added `X-YieldPilot-Cache` response headers for local verification of cache hits and misses.
+- Added Vercel function duration hardening for the market API route.
+- Added real ESLint checks with Next.js core-web-vitals and TypeScript rules.
+- Persisted real scan risk-history samples locally instead of only showing a synthetic response proxy.
+- Sanitized external news links before rendering them in the browser.
+- Redacted provider error messages before sending details to the UI.
+- Added source health and alerts for missing keys, degraded providers, and provider failures.
+- Updated public repository links through `NEXT_PUBLIC_REPOSITORY_URL`.
 
 ## Tech Stack
 
@@ -37,8 +39,10 @@ Most crypto users compare APY manually and often miss risk signals like thin TVL
 - lucide-react icons
 - DefiLlama Yields API
 - SoSoValue OpenAPI
+- SoSoValue Index API
 - SoDEX public market data
 - OpenAI Responses API
+- Vercel deployment target
 
 ## Environment
 
@@ -50,60 +54,101 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 SODEX_ENV=testnet
 SODEX_SPOT_ENDPOINT=https://testnet-gw.sodex.dev/api/v1/spot
+NEXT_PUBLIC_REPOSITORY_URL=https://github.com/yournameishere/YIELDPILOT
 ```
 
-Do not commit real API keys. SoSoValue and OpenAI keys are read only on the server inside `/api/yieldpilot/market`.
+Do not commit real API keys. `SOSOVALUE_API_KEY` and `OPENAI_API_KEY` are server-only and are read inside `/api/yieldpilot/market`. `NEXT_PUBLIC_REPOSITORY_URL` is intentionally public.
 
-## Run Locally
+## Local Development
 
 ```bash
-npm install
-npm run dev
+corepack pnpm install
+corepack pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000` unless the dev server chooses another free port.
+
+Useful checks:
+
+```bash
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm audit --prod
+```
+
+## Deployment
+
+The project is linked to Vercel through `.vercel/project.json`.
+
+Required Vercel environment variables for production:
+
+- `SOSOVALUE_API_KEY`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `SODEX_ENV`
+- `SODEX_SPOT_ENDPOINT`
+- `NEXT_PUBLIC_REPOSITORY_URL`
+
+Deploy with:
+
+```bash
+vercel --prod
+```
+
+After deployment, verify:
+
+- The landing page renders without a framework error overlay.
+- `/api/yieldpilot/market?goal=balanced&amount=1000` returns JSON.
+- The first API call has `X-YieldPilot-Cache: MISS`.
+- A repeated identical API call has `X-YieldPilot-Cache: HIT`.
+- The Sources tab shows provider health for DefiLlama, SoSoValue, SoDEX, and OpenAI.
+
+## API Route
+
+`GET /api/yieldpilot/market`
+
+Common query params:
+
+- `goal`: `safe`, `balanced`, `aggressive`, `stablecoin`, or `custom`
+- `amount`: simulated capital in USD
+- `stableOnly`: `true` or `false`
+- `maxRisk`: risk ceiling from 15 to 90
+- `maxApy`: APY ceiling from 3 to 80
+- `minTvlUsd`: TVL floor from 500,000 to 500,000,000
+- `maxPositions`: 1 to 6
+- `rebalanceThresholdPct`: 2 to 30
+- `alertRiskScore`: 20 to 95
+
+Example:
+
+```bash
+curl "http://localhost:3000/api/yieldpilot/market?goal=custom&amount=1000&maxRisk=54&minTvlUsd=4000000&maxApy=24&stableOnly=true"
+```
+
+## Safety Model
+
+YieldPilot AI is educational software and not financial advice. Wave 2 remains simulation-only. Real execution belongs in a later phase after smart contract design, explicit user approvals, security review, and compliance review.
 
 ## Wave Roadmap
 
-### 01 - Wave 1
+### Wave 1 - Prototype
 
-Concept and prototype.
+- Landing page and initial app console.
+- Wallet connect and simulation wallet.
+- Live market intelligence and yield discovery.
+- Simulated rebalance reasoning.
 
-Status: **Built**  
-Target: **Ready for Wave 1 demo**
+### Wave 2 - Functional MVP
 
-- Landing page and app console.
-- Wallet connect plus simulation wallet.
-- Live SoSoValue market intelligence.
-- Live DefiLlama APY discovery.
-- SoDEX public market pulse.
-- OpenAI strategy memo, AI reasoning, and rebalance logs.
+- Persistent local snapshots and risk history.
+- Manual and 45-second local polling.
+- Alerts from source health, TVL, ETF flow, risk thresholds, and SoDEX volatility.
+- Better analytics for projected yield, stress-loss proxy, confidence, and diversification.
+- SoSoValue, SoSoValue Indexes, SoDEX, DefiLlama, and OpenAI represented in the engine.
+- Provider quota protection and production deployment hardening.
 
-Primary demo action: open the app, analyze the market, activate the simulation, and test a protective exit.
-
-### 02 - Wave 2
-
-Functional MVP.
-
-Status: **Next**  
-Target: **Functional MVP**
-
-- Portfolio tracking database.
-- Real-time market updates.
-- Notifications and alerts.
-- Risk scoring history.
-- Better analytics charts.
-- More DeFi protocol coverage.
-- Deeper OpenAI-assisted explanations.
-
-Primary goal: make the portfolio and risk engine persistent, observable, and useful over time.
-
-### 03 - Wave 3
-
-Advanced product.
-
-Status: **Vision**  
-Target: **Production direction**
+### Wave 3 - Production Direction
 
 - Smart contract execution.
 - Optional auto-rebalance approvals.
@@ -112,10 +157,10 @@ Target: **Production direction**
 - Strategy marketplace.
 - Multi-chain expansion.
 - Mobile polish.
-- Security review and audits.
+- Security audits.
 
-Primary goal: move from a safe simulation prototype toward a reviewed, user-approved autonomous DeFi wealth manager.
+## Documentation References
 
-## Safety Note
-
-YieldPilot AI is a hackathon prototype and educational simulation. It is not financial advice and does not execute real fund movement in Wave 1.
+- SoSoValue API: https://sosovalue-1.gitbook.io/sosovalue-api-doc
+- SoSoValue Indexes: https://ssi.sosovalue.com/en
+- SoDEX documentation: https://sodex.com/documentation

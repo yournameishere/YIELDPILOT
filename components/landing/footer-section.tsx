@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+const REPOSITORY_URL = process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim();
+
 type FooterLink = {
   name: string;
   href: string;
@@ -20,7 +22,7 @@ const LINKS: Record<string, FooterLink[]> = {
     { name: "API Route",       href: "#developers" },
     { name: "SoDEX Docs",      href: "https://sodex.com/documentation" },
     { name: "SoSoValue API",   href: "https://sosovalue-1.gitbook.io/sosovalue-api-doc" },
-    { name: "README",          href: "https://github.com/yournameishere/YIELDPILOT#readme" },
+    { name: REPOSITORY_URL ? "README" : "Set Repo URL", href: REPOSITORY_URL ? `${REPOSITORY_URL}#readme` : "#developers" },
     { name: "Source Health",   href: "#console" },
   ],
   COMPANY: [
@@ -40,7 +42,7 @@ export function FooterSection() {
   const [time, setTime] = useState("");
 
   useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false, timeZone: "UTC" }));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -104,7 +106,7 @@ export function FooterSection() {
         {/* Bottom bar */}
         <div className="py-5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="font-mono text-[10px] text-[#3a3a3a]">
-            © 2026 YIELDPILOT AI. WAVE 1 PROTOTYPE.
+            © 2026 YIELDPILOT AI. WAVE 2 LOCAL MVP.
           </p>
           <div className="flex items-center gap-6">
             <span className="font-mono text-[10px] text-[#3a3a3a] tabular-nums">{time} UTC</span>

@@ -2,6 +2,16 @@ export type StrategyGoal = "safe" | "balanced" | "aggressive" | "stablecoin" | "
 
 export type SourceStatus = "live" | "missing_key" | "degraded" | "error";
 
+export interface StrategyConstraints {
+  stableOnly: boolean;
+  maxRisk: number;
+  maxApy: number;
+  minTvlUsd: number;
+  maxPositions: number;
+  rebalanceThresholdPct: number;
+  alertRiskScore: number;
+}
+
 export interface DataSourceStatus {
   name: string;
   status: SourceStatus;
@@ -24,6 +34,15 @@ export interface YieldOpportunity {
   exposure: string;
   confidence: number;
   notes: string[];
+  scoring: {
+    yieldComponent: number;
+    tvlComponent: number;
+    reputationComponent: number;
+    stabilityComponent: number;
+    predictionComponent: number;
+    riskPenalty: number;
+    sourceSignals: string[];
+  };
 }
 
 export interface StrategyAllocation {
@@ -35,6 +54,7 @@ export interface StrategyAllocation {
   apy: number;
   riskScore: number;
   reason: string;
+  evidence: string[];
 }
 
 export interface NewsItem {
@@ -59,6 +79,16 @@ export interface SodexTicker {
   quoteVolume: number;
 }
 
+export interface SosoIndexSnapshot {
+  ticker: string;
+  price: number;
+  change24hPct: number;
+  roi7d: number;
+  roi1m: number;
+  roi3m: number;
+  ytd: number;
+}
+
 export interface MarketPulse {
   moodLabel: string;
   moodScore: number;
@@ -70,6 +100,7 @@ export interface MarketPulse {
   news: NewsItem[];
   etfFlows: EtfFlowPoint[];
   sodexTickers: SodexTicker[];
+  sosoIndexes: SosoIndexSnapshot[];
 }
 
 export interface RiskEvent {
@@ -87,17 +118,65 @@ export interface OpenAiInsight {
   recommendation: string;
   riskNote: string;
   nextAction: string;
+  reasoning: string[];
 }
 
 export interface YieldPilotStrategy {
   goal: StrategyGoal;
   goalLabel: string;
+  constraints: StrategyConstraints;
   estimatedApy: number;
   riskScore: number;
   dailyYieldUsd: number;
   allocation: StrategyAllocation[];
   rationale: string[];
   rebalanceActions: string[];
+  rebalanceDecisions: RebalanceDecision[];
+}
+
+export interface RebalanceDecision {
+  id: string;
+  action: "allocate" | "hold" | "reduce" | "exit_ready";
+  title: string;
+  detail: string;
+  evidence: string[];
+  source: string;
+  impact: "positive" | "neutral" | "protective";
+}
+
+export interface PortfolioSnapshot {
+  id: string;
+  timestamp: string;
+  totalValueUsd: number;
+  estimatedApy: number;
+  dailyYieldUsd: number;
+  riskScore: number;
+  marketMood: string;
+}
+
+export interface RiskHistoryPoint {
+  label: string;
+  riskScore: number;
+  estimatedApy: number;
+  marketMood: string;
+}
+
+export interface StrategyAlert {
+  id: string;
+  level: "info" | "watch" | "warning";
+  title: string;
+  detail: string;
+  trigger: string;
+}
+
+export interface StrategyAnalytics {
+  projectedMonthlyYieldUsd: number;
+  projectedAnnualYieldUsd: number;
+  stressLossUsd: number;
+  stressLossPct: number;
+  confidenceScore: number;
+  diversificationScore: number;
+  backtestNote: string;
 }
 
 export interface YieldPilotMarketResponse {
@@ -106,6 +185,7 @@ export interface YieldPilotMarketResponse {
   inputs: {
     amountUsd: number;
     goal: StrategyGoal;
+    constraints: StrategyConstraints;
   };
   portfolio: {
     totalValueUsd: number;
@@ -121,5 +201,11 @@ export interface YieldPilotMarketResponse {
   opportunities: YieldOpportunity[];
   market: MarketPulse;
   riskEvents: RiskEvent[];
+  wave2: {
+    snapshots: PortfolioSnapshot[];
+    riskHistory: RiskHistoryPoint[];
+    alerts: StrategyAlert[];
+    analytics: StrategyAnalytics;
+  };
   sources: DataSourceStatus[];
 }

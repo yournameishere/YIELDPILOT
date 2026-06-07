@@ -91,7 +91,7 @@ const METRICS = [
     end: 0,
     suffix: "",
     label: "CUSTODY RISK",
-    sub: "Wave 1 simulation mode",
+    sub: "Wave 2 simulation mode",
   },
 ];
 

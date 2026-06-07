@@ -3,34 +3,46 @@
 import { useState, useEffect, useRef } from "react";
 import { Copy, Check } from "lucide-react";
 
+const REPOSITORY_URL = process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim();
+
 const TABS = [
   {
     label: "ENV",
     code: `SOSOVALUE_API_KEY=your_sosovalue_key
+OPENAI_API_KEY=your_openai_key
 SODEX_ENV=testnet
 SODEX_SPOT_ENDPOINT=https://testnet-gw.sodex.dev/api/v1/spot
+NEXT_PUBLIC_REPOSITORY_URL=https://github.com/yournameishere/YIELDPILOT
 
 # Keep credentials server-side only`,
   },
   {
     label: "SCAN",
-    code: `GET /api/yieldpilot/market?goal=balanced&amount=1000
+    code: `GET /api/yieldpilot/market?goal=custom&amount=1000
+  &maxRisk=54&minTvlUsd=4000000
+  &maxApy=24&stableOnly=true
 
 // Server fetches:
 // - DefiLlama yield pools
-// - SoSoValue hot news and ETF flows
+// - SoSoValue hot news, ETF flows, indexes
 // - SoDEX public spot tickers`,
   },
   {
     label: "SCORE",
-    code: `const risk = scoreRisk(pool)
-const score = apy + tvlDepth + reputation - risk
+    code: `const scoring = {
+  yieldComponent,
+  tvlComponent,
+  reputationComponent,
+  stabilityComponent,
+  predictionComponent,
+  riskPenalty
+}
 
-if (risk <= goal.maxRisk) {
+if (risk <= constraints.maxRisk) {
   opportunities.push(pool)
 }
 
-// Strategy weights are computed from live scores`,
+// UI shows the score breakdown per pool`,
   },
   {
     label: "SIM",
@@ -43,15 +55,15 @@ activity.log({
   allocation: strategy.allocation
 })
 
-// No custody or contract calls in Wave 1`,
+// No custody or contract calls in Wave 2`,
   },
 ];
 
 const SDK_PROPS = [
-  { k: "Typed engine",       v: "The market response, allocations, risk events, and source health are all typed." },
+  { k: "Typed engine",       v: "The market response, allocations, risk events, alerts, analytics, and source health are all typed." },
   { k: "Server-side secrets", v: "SoSoValue API access stays in the API route and never ships to the browser." },
-  { k: "Real market inputs", v: "APY, TVL, hot news, ETF flow, and SoDEX ticker data drive the strategy." },
-  { k: "Simulation logs",    v: "Hackathon judges can see rebalances and protective exits without real funds." },
+  { k: "Real market inputs", v: "APY, TVL, hot news, ETF flow, SoSoValue Indexes, and SoDEX ticker data drive the strategy." },
+  { k: "Persistent local mode", v: "Hackathon judges can inspect saved snapshots, alerts, and protective exits without real funds." },
 ];
 
 export function DevelopersSection() {
@@ -95,7 +107,7 @@ export function DevelopersSection() {
           <div className="border-r border-[#1e1e1e]">
             <div className="border-b border-[#1e1e1e] p-6">
               <p className="text-sm text-[#5a5a5a] leading-relaxed max-w-md">
-                The prototype is a full Next.js app with a server-side market engine, source health reporting, wallet-aware UI, and simulation execution for Wave 1.
+                The MVP is a full Next.js app with a server-side market engine, custom strategy constraints, local portfolio tracking, source health reporting, and simulation execution for Wave 2.
               </p>
             </div>
 
@@ -119,9 +131,15 @@ export function DevelopersSection() {
               <a href="https://sodex.com/documentation" target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#2196f3] tracking-wider hover:underline">
                 SODEX DOCS -&gt;
               </a>
-              <a href="https://github.com/yournameishere/YIELDPILOT#readme" target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#5a5a5a] tracking-wider hover:text-[#f2ede6] transition-colors">
-                README -&gt;
-              </a>
+              {REPOSITORY_URL ? (
+                <a href={`${REPOSITORY_URL}#readme`} target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#5a5a5a] tracking-wider hover:text-[#f2ede6] transition-colors">
+                  README -&gt;
+                </a>
+              ) : (
+                <a href="#developers" className="font-mono text-[11px] text-[#5a5a5a] tracking-wider hover:text-[#f2ede6] transition-colors">
+                  SET REPO URL -&gt;
+                </a>
+              )}
             </div>
           </div>
 
@@ -176,7 +194,7 @@ export function DevelopersSection() {
 
             {/* Footer */}
             <div className="border-t border-[#1e1e1e] px-6 py-3 flex items-center justify-between bg-[#080808]">
-              <span className="font-mono text-[10px] text-[#3a3a3a]">yieldpilot-engine · wave-1 · stable</span>
+              <span className="font-mono text-[10px] text-[#3a3a3a]">yieldpilot-engine · wave-2 · local-mvp</span>
               <div className="flex items-center gap-2">
                 <span className="status-pulse w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block" />
                 <span className="font-mono text-[10px] text-[#22c55e]">STABLE</span>

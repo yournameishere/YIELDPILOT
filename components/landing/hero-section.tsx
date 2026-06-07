@@ -48,7 +48,7 @@ export function HeroSection() {
               {/* Line 1 */}
               <div className="overflow-hidden">
                 <p className="font-mono text-[11px] tracking-[0.2em] text-[#2196f3] mb-4">
-                  - YIELDPILOT v1.0 · AUTONOMOUS DEFI YIELD MANAGER
+                  - YIELDPILOT v2.0 · AUTONOMOUS DEFI YIELD MANAGER
                 </p>
               </div>
 
@@ -134,7 +134,7 @@ export function HeroSection() {
                   "SIMULATION-FIRST EXECUTION",
                   "AI REASONING FEED",
                   "PROTECTIVE EXIT LOGIC",
-                  "WAVE 1 READY",
+                  "WAVE 2 LOCAL MVP",
                 ].map(item => (
                   <span key={item} className="flex items-center gap-3 font-mono text-[10px] tracking-[0.2em] text-[#3a3a3a]">
                     <span className="w-1 h-1 bg-[#2196f3] inline-block shrink-0" />

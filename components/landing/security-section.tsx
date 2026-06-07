@@ -9,7 +9,7 @@ const FEATURES = [
     id: "01",
     tag: "CUSTODY",
     title: "SIMULATION FIRST",
-    desc: "Wave 1 never moves real funds. The app proves the intelligence loop with simulated allocations and visible execution logs.",
+    desc: "Wave 2 never moves real funds. The app proves the intelligence loop with simulated allocations, local snapshots, alerts, and visible execution logs.",
   },
   {
     id: "02",
@@ -194,7 +194,7 @@ export function SecuritySection() {
         {/* Bottom note */}
         <div className="py-5 flex items-center justify-between">
           <span className="font-mono text-[10px] text-[#3a3a3a]">
-            WAVE 1 USES SIMULATION MODE UNTIL CONTRACT EXECUTION IS SECURITY REVIEWED
+            WAVE 2 USES SIMULATION MODE UNTIL CONTRACT EXECUTION IS SECURITY REVIEWED
           </span>
           <a href="#developers" className="font-mono text-[10px] text-[#2196f3] hover:underline tracking-wider">
             SAFETY MODEL -&gt;

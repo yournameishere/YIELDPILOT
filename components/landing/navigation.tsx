@@ -19,7 +19,7 @@ export function Navigation() {
   const [time, setTime] = useState("");
 
   useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    const tick = () => setTime(new Date().toLocaleTimeString("en-US", { hour12: false, timeZone: "UTC" }));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -41,7 +41,7 @@ export function Navigation() {
         {/* Top status bar */}
         <div className="border-b border-[#1e1e1e] px-6 lg:px-12 h-8 flex items-center justify-between">
           <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest uppercase">
-            SYS:YIELDPILOT-AI &nbsp;/&nbsp; WAVE 1 BUILD
+            SYS:YIELDPILOT-AI &nbsp;/&nbsp; WAVE 2 LOCAL MVP
           </span>
           <div className="hidden md:flex items-center gap-6">
             <span className="font-mono text-[10px] text-[#3a3a3a]">

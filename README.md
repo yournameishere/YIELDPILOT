@@ -273,15 +273,7 @@ YieldPilot AI is educational software and not financial advice. Wave 3 remains s
 - Response namespace updated to `wave3`.
 - Final UI and README production-readiness pass.
 
-### Later - Real Execution Direction
-
-- Smart contract execution.
-- Optional auto-rebalance approvals.
-- AI chat assistant.
-- Custom user rules.
-- Strategy marketplace.
-- Multi-chain expansion.
-- External security audits.
+ 
 
 ## Documentation References
 

@@ -7,6 +7,7 @@ import {
   BarChart3,
   Bell,
   BrainCircuit,
+  CalendarDays,
   ClipboardList,
   Database,
   Download,
@@ -40,9 +41,9 @@ declare global {
   }
 }
 
-type ConsoleTab = "strategy" | "risk" | "analytics" | "sources";
+type ConsoleTab = "strategy" | "risk" | "macro" | "analytics" | "sources";
 
-const STORAGE_KEY = "yieldpilot-wave2-state-v1";
+const STORAGE_KEY = "yieldpilot-wave3-state-v1";
 
 const DEFAULT_CONSTRAINTS: Record<StrategyGoal, StrategyConstraints> = {
   safe: {
@@ -103,6 +104,7 @@ const GOALS: Array<{ id: StrategyGoal; label: string; hint: string }> = [
 const TABS: Array<{ id: ConsoleTab; label: string; icon: typeof ClipboardList }> = [
   { id: "strategy", label: "STRATEGY", icon: ClipboardList },
   { id: "risk", label: "RISK", icon: ShieldCheck },
+  { id: "macro", label: "MACRO", icon: CalendarDays },
   { id: "analytics", label: "ANALYTICS", icon: BarChart3 },
   { id: "sources", label: "SOURCES", icon: Database },
 ];
@@ -118,6 +120,12 @@ const alertTone: Record<string, string> = {
   info: "text-[#2196f3]",
   watch: "text-[#f59e0b]",
   warning: "text-[#ef4444]",
+};
+
+const macroRiskTone: Record<string, string> = {
+  Calm: "text-[#22c55e]",
+  Watch: "text-[#f59e0b]",
+  "Event Risk": "text-[#ef4444]",
 };
 
 function constraintsEqual(left: StrategyConstraints, right: StrategyConstraints) {
@@ -163,6 +171,14 @@ function shortAddress(address: string) {
 
 function timeStamp() {
   return new Date().toLocaleTimeString("en-US", { hour12: false });
+}
+
+function macroTimingLabel(daysFromNow: number) {
+  if (daysFromNow === 0) return "Today";
+  if (daysFromNow === 1) return "Tomorrow";
+  if (daysFromNow > 1) return `In ${daysFromNow} days`;
+  if (daysFromNow === -1) return "Yesterday";
+  return `${Math.abs(daysFromNow)} days ago`;
 }
 
 function readStoredState() {
@@ -232,11 +248,13 @@ export function YieldPilotConsole() {
     [data],
   );
 
-  const latestSnapshot = snapshots[0] ?? data?.wave2.snapshots[0];
+  const latestSnapshot = snapshots[0] ?? data?.wave3.snapshots[0];
   const displayedRiskHistory = useMemo(
-    () => (riskHistory.length > 0 ? riskHistory.slice(0, 8).reverse() : data?.wave2.riskHistory ?? []),
+    () => (riskHistory.length > 0 ? riskHistory.slice(0, 8).reverse() : data?.wave3.riskHistory ?? []),
     [data, riskHistory],
   );
+  const macroEvents = useMemo(() => data?.market.macroEvents ?? [], [data]);
+  const nextMacroEvent = useMemo(() => macroEvents.find((event) => event.daysFromNow >= 0), [macroEvents]);
   const hasPendingInputs = Boolean(
     data &&
       (data.inputs.goal !== goal ||
@@ -246,6 +264,13 @@ export function YieldPilotConsole() {
   const activeConstraints = hasPendingInputs ? constraints : data?.inputs.constraints ?? constraints;
   const canUseCurrentStrategy = Boolean(data && !hasPendingInputs && data.strategy.allocation.length > 0);
   const canExportMemo = Boolean(data && !hasPendingInputs);
+  const liveStatus = error
+    ? `Market analysis error: ${error}`
+    : loading
+      ? "Market analysis is running."
+      : data
+        ? `Market analysis loaded for ${data.strategy.goalLabel}.`
+        : "Market analysis is waiting to run.";
 
   function persist(nextSnapshots = snapshots, nextActivity = activity, nextRiskHistory = riskHistory) {
     saveStoredState(nextSnapshots, nextActivity, nextRiskHistory);
@@ -308,7 +333,7 @@ export function YieldPilotConsole() {
       if (requestId !== requestSeq.current) return;
       setData(payload);
 
-      const snapshot = payload.wave2.snapshots[0];
+      const snapshot = payload.wave3.snapshots[0];
       const nextSnapshots = snapshot
         ? [snapshot, ...snapshots.filter((item) => item.id !== snapshot.id)].slice(0, 12)
         : snapshots;
@@ -384,7 +409,7 @@ export function YieldPilotConsole() {
           : String(Date.now()).slice(-8);
       setWalletAddress(`SIM-${random.toUpperCase()}`);
       setWalletMode("simulation");
-      pushActivity([`${timeStamp()} SIMULATION wallet created for local Wave 2 testing.`]);
+      pushActivity([`${timeStamp()} SIMULATION wallet created for local Wave 3 testing.`]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Wallet connection failed.");
     }
@@ -403,7 +428,7 @@ export function YieldPilotConsole() {
       (decision) => `${timeStamp()} ${decision.action.toUpperCase()} ${decision.title}: ${decision.detail}`,
     );
     pushActivity(lines.length > 0 ? lines : [`${timeStamp()} HOLD no eligible allocation changes.`]);
-    if (data.wave2.snapshots[0]) addSnapshot(data.wave2.snapshots[0]);
+    if (data.wave3.snapshots[0]) addSnapshot(data.wave3.snapshots[0]);
   }
 
   function simulateRiskExit() {
@@ -425,15 +450,16 @@ export function YieldPilotConsole() {
       portfolio: data.portfolio,
       ai: data.ai,
       strategy: data.strategy,
-      alerts: data.wave2.alerts,
-      analytics: data.wave2.analytics,
+      market: data.market,
+      alerts: data.wave3.alerts,
+      analytics: data.wave3.analytics,
       sources: data.sources,
     };
     const blob = new Blob([JSON.stringify(memo, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `yieldpilot-wave2-memo-${Date.now()}.json`;
+    anchor.download = `yieldpilot-wave3-memo-${Date.now()}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
     pushActivity([`${timeStamp()} EXPORT strategy memo saved locally as JSON.`]);
@@ -452,6 +478,7 @@ export function YieldPilotConsole() {
     { label: "DAILY YIELD", value: formatUsd(data?.portfolio.dailyYieldUsd ?? 0), icon: Activity },
     { label: "RISK SCORE", value: `${data?.portfolio.riskScore ?? 0}/100`, icon: Gauge },
     { label: "MOOD", value: data?.portfolio.marketMood ?? "Scanning", icon: Radar },
+    { label: "MACRO", value: data?.market.macroRiskLabel ?? "Pending", icon: CalendarDays },
   ];
 
   return (
@@ -459,8 +486,8 @@ export function YieldPilotConsole() {
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         <div className="border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
           <div>
-            <span className="sys-tag mb-3 block">WAVE 2 LOCAL APP</span>
-            <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">
+            <span className="sys-tag mb-3 block">WAVE 3 PRODUCTION SIM</span>
+            <h2 className="font-display text-6xl lg:text-8xl leading-[1.02] text-[#f2ede6]">
               AI YIELD<br />
               <span style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>WORKSPACE</span>
             </h2>
@@ -468,32 +495,39 @@ export function YieldPilotConsole() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={connectWallet}
+              type="button"
               className="inline-flex items-center gap-3 border border-[#2e2e2e] px-5 h-11 font-mono text-[11px] tracking-widest text-[#f2ede6] hover:border-[#2196f3]/50 hover:text-[#2196f3] transition-colors"
             >
-              <Wallet className="w-4 h-4" />
+              <Wallet className="w-4 h-4" aria-hidden="true" />
               {walletMode === "disconnected" ? "CONNECT WALLET" : shortAddress(walletAddress)}
             </button>
             <button
               onClick={() => setAutoRefresh((value) => !value)}
+              type="button"
+              aria-pressed={autoRefresh}
               className={`inline-flex items-center gap-3 border px-5 h-11 font-mono text-[11px] tracking-widest transition-colors ${
                 autoRefresh
                   ? "border-[#22c55e]/60 text-[#22c55e]"
                   : "border-[#2e2e2e] text-[#5a5a5a] hover:text-[#f2ede6]"
               }`}
             >
-              <Activity className="w-4 h-4" />
+              <Activity className="w-4 h-4" aria-hidden="true" />
               {autoRefresh ? "LIVE POLLING ON" : "LIVE POLLING OFF"}
             </button>
             <button
               onClick={() => loadMarket()}
               disabled={loading}
+              type="button"
               className="inline-flex items-center gap-3 bg-[#2196f3] text-[#050505] px-5 h-11 font-mono text-[11px] tracking-widest font-semibold hover:bg-[#42a5f5] disabled:opacity-60 transition-colors"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
               ANALYZE MARKET
             </button>
           </div>
         </div>
+        <p className="sr-only" aria-live={error ? "assertive" : "polite"} aria-atomic="true">
+          {liveStatus}
+        </p>
 
         <div className="grid lg:grid-cols-[320px_1fr] border-b border-[#1e1e1e]">
           <aside className="border-r border-[#1e1e1e]">
@@ -524,6 +558,8 @@ export function YieldPilotConsole() {
                 <button
                   key={item.id}
                   onClick={() => handleGoal(item.id)}
+                  type="button"
+                  aria-pressed={goal === item.id}
                   className={`w-full text-left p-5 border-b border-[#1e1e1e] last:border-b-0 transition-colors ${
                     goal === item.id ? "bg-[#0e0e0e]" : "hover:bg-[#0a0a0a]"
                   }`}
@@ -589,6 +625,8 @@ export function YieldPilotConsole() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => updateConstraint("stableOnly", !constraints.stableOnly)}
+                  type="button"
+                  aria-pressed={constraints.stableOnly}
                   className={`h-10 border font-mono text-[10px] tracking-widest transition-colors ${
                     constraints.stableOnly ? "border-[#2196f3] text-[#2196f3]" : "border-[#2e2e2e] text-[#5a5a5a]"
                   }`}
@@ -611,6 +649,7 @@ export function YieldPilotConsole() {
               <button
                 onClick={() => loadMarket("custom", amount, constraints)}
                 disabled={loading}
+                type="button"
                 className="inline-flex items-center justify-center gap-3 border border-[#2196f3]/60 text-[#2196f3] px-5 h-10 font-mono text-[10px] tracking-widest hover:bg-[#2196f3] hover:text-[#050505] disabled:opacity-50 transition-colors"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -622,6 +661,7 @@ export function YieldPilotConsole() {
               <button
                 onClick={activateStrategy}
                 disabled={!canUseCurrentStrategy}
+                type="button"
                 className="inline-flex items-center justify-center gap-3 bg-[#2196f3] text-[#050505] px-5 h-11 font-mono text-[11px] tracking-widest font-semibold hover:bg-[#42a5f5] disabled:opacity-50 transition-colors"
               >
                 <Play className="w-4 h-4" />
@@ -630,6 +670,7 @@ export function YieldPilotConsole() {
               <button
                 onClick={simulateRiskExit}
                 disabled={!canUseCurrentStrategy}
+                type="button"
                 className="inline-flex items-center justify-center gap-3 border border-[#2e2e2e] text-[#f2ede6] px-5 h-11 font-mono text-[11px] tracking-widest hover:border-[#ef4444]/60 hover:text-[#ef4444] disabled:opacity-50 transition-colors"
               >
                 <AlertTriangle className="w-4 h-4" />
@@ -644,16 +685,16 @@ export function YieldPilotConsole() {
           </aside>
 
           <div>
-            <div className="grid grid-cols-2 lg:grid-cols-5 border-b border-[#1e1e1e]">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 border-b border-[#1e1e1e]">
               {metrics.map((metric) => (
                 <div key={metric.label} className="p-5 lg:p-6 border-r border-b lg:border-b-0 border-[#1e1e1e] last:border-r-0 min-h-[120px]">
                   <div className="flex items-center justify-between mb-5">
                     <span className="font-mono text-[9px] tracking-[0.18em] text-[#3a3a3a]">{metric.label}</span>
-                    <metric.icon className="w-4 h-4 text-[#2196f3]" />
+                    <metric.icon className="w-4 h-4 text-[#2196f3]" aria-hidden="true" />
                   </div>
                   <div
                     className={`font-display leading-none text-[#f2ede6] tabular-nums ${
-                      metric.label === "MOOD" ? "text-2xl lg:text-3xl xl:text-4xl" : "text-3xl lg:text-4xl"
+                      metric.label === "MOOD" || metric.label === "MACRO" ? "text-2xl lg:text-3xl" : "text-3xl lg:text-4xl"
                     }`}
                   >
                     {metric.value}
@@ -662,23 +703,29 @@ export function YieldPilotConsole() {
               ))}
             </div>
 
-            <div className="border-b border-[#1e1e1e] flex overflow-x-auto">
+            <div className="border-b border-[#1e1e1e] grid grid-cols-2 sm:grid-cols-3 lg:flex" role="tablist" aria-label="YieldPilot console views">
               {TABS.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setTab(item.id)}
-                  className={`min-w-[150px] h-14 px-5 border-r border-[#1e1e1e] inline-flex items-center justify-center gap-3 font-mono text-[10px] tracking-widest transition-colors ${
+                  type="button"
+                  role="tab"
+                  id={`yieldpilot-tab-${item.id}`}
+                  aria-selected={tab === item.id}
+                  aria-controls={`yieldpilot-panel-${item.id}`}
+                  tabIndex={tab === item.id ? 0 : -1}
+                  className={`h-14 px-3 sm:px-5 border-r border-b lg:border-b-0 border-[#1e1e1e] inline-flex items-center justify-center gap-2 sm:gap-3 font-mono text-[9px] sm:text-[10px] tracking-widest transition-colors lg:min-w-[150px] ${
                     tab === item.id ? "bg-[#0e0e0e] text-[#2196f3]" : "text-[#5a5a5a] hover:text-[#f2ede6]"
                   }`}
                 >
-                  <item.icon className="w-4 h-4" />
+                  <item.icon className="w-4 h-4" aria-hidden="true" />
                   {item.label}
                 </button>
               ))}
             </div>
 
             {tab === "strategy" && (
-              <div className="grid xl:grid-cols-[1.15fr_0.85fr] border-b border-[#1e1e1e]">
+              <div id="yieldpilot-panel-strategy" role="tabpanel" aria-labelledby="yieldpilot-tab-strategy" className="grid xl:grid-cols-[1.15fr_0.85fr] border-b border-[#1e1e1e]">
                 <div className="border-r border-[#1e1e1e]">
                   <div className="p-6 border-b border-[#1e1e1e] flex items-start justify-between gap-4">
                     <div>
@@ -709,7 +756,7 @@ export function YieldPilotConsole() {
                         </div>
                         <div className="p-5">
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span className="font-display text-3xl text-[#f2ede6]">{item.protocol}</span>
+                            <span className="font-display text-3xl text-[#f2ede6] break-words">{item.protocol}</span>
                             <span className="font-mono text-[10px] text-[#2196f3] tracking-widest">{item.chain}</span>
                           </div>
                           <p className="mt-2 text-sm text-[#5a5a5a] leading-relaxed">{item.reason}</p>
@@ -797,7 +844,7 @@ export function YieldPilotConsole() {
             )}
 
             {tab === "risk" && (
-              <div className="grid xl:grid-cols-[1fr_0.9fr] border-b border-[#1e1e1e]">
+              <div id="yieldpilot-panel-risk" role="tabpanel" aria-labelledby="yieldpilot-tab-risk" className="grid xl:grid-cols-[1fr_0.9fr] border-b border-[#1e1e1e]">
                 <div className="border-r border-[#1e1e1e] p-6">
                   <div className="flex items-center justify-between mb-5">
                     <span className="sys-tag text-[9px]">RISK SCORING TRANSPARENCY</span>
@@ -815,7 +862,7 @@ export function YieldPilotConsole() {
                         <div key={item.id} className="border-b border-[#1e1e1e] pb-5 last:border-b-0">
                           <div className="flex items-start justify-between gap-4 mb-3">
                             <div>
-                              <div className="font-display text-3xl text-[#f2ede6]">{item.protocol}</div>
+                              <div className="font-display text-3xl text-[#f2ede6] break-words">{item.protocol}</div>
                               <p className="font-mono text-[10px] text-[#3a3a3a]">
                                 {item.asset} / {item.chain}
                               </p>
@@ -859,7 +906,7 @@ export function YieldPilotConsole() {
                       <Bell className="w-4 h-4 text-[#f59e0b]" />
                     </div>
                     <div className="flex flex-col gap-4">
-                      {(data?.wave2.alerts ?? []).map((alert) => (
+                      {(data?.wave3.alerts ?? []).map((alert) => (
                         <div key={alert.id} className="border-l border-[#2e2e2e] pl-4">
                           <div className={`font-mono text-[10px] tracking-widest ${alertTone[alert.level]}`}>
                             {alert.title.toUpperCase()}
@@ -889,8 +936,98 @@ export function YieldPilotConsole() {
               </div>
             )}
 
+            {tab === "macro" && (
+              <div id="yieldpilot-panel-macro" role="tabpanel" aria-labelledby="yieldpilot-tab-macro" className="grid xl:grid-cols-[0.85fr_1.15fr] border-b border-[#1e1e1e]">
+                <div className="border-r border-[#1e1e1e] p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <span className="sys-tag text-[9px]">MACRO RISK OVERLAY</span>
+                    <CalendarDays className="w-4 h-4 text-[#2196f3]" />
+                  </div>
+                  <div className={`font-display text-5xl leading-none ${macroRiskTone[data?.market.macroRiskLabel ?? "Watch"] ?? "text-[#f2ede6]"}`}>
+                    {data?.market.macroRiskLabel ?? "Scanning"}
+                  </div>
+                  <p className="mt-4 text-sm text-[#5a5a5a] leading-relaxed">
+                    SoSoValue macro calendar risk is folded into market mood, confidence, stress loss, alerts, and protective-hold logic.
+                  </p>
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between font-mono text-[10px] tracking-widest text-[#3a3a3a] mb-2">
+                      <span>IMPACT SCORE</span>
+                      <span className={macroRiskTone[data?.market.macroRiskLabel ?? "Watch"] ?? "text-[#f2ede6]"}>
+                        {data?.market.macroRiskScore ?? 0}/100
+                      </span>
+                    </div>
+                    <BarMeter
+                      value={data?.market.macroRiskScore ?? 0}
+                      tone={
+                        data?.market.macroRiskLabel === "Event Risk"
+                          ? "bg-[#ef4444]"
+                          : data?.market.macroRiskLabel === "Watch"
+                            ? "bg-[#f59e0b]"
+                            : "bg-[#22c55e]"
+                      }
+                    />
+                  </div>
+
+                  <div className="mt-8 border-t border-[#1e1e1e] pt-5">
+                    <span className="font-mono text-[10px] tracking-widest text-[#3a3a3a]">NEXT CATALYST</span>
+                    {nextMacroEvent ? (
+                      <div className="mt-3">
+                        <div className="font-display text-3xl text-[#f2ede6] leading-none">
+                          {macroTimingLabel(nextMacroEvent.daysFromNow)}
+                        </div>
+                        <p className="mt-2 text-sm text-[#5a5a5a] leading-relaxed">
+                          {nextMacroEvent.events.slice(0, 3).join(", ")}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-[#5a5a5a] leading-relaxed">
+                        No upcoming macro event returned by SoSoValue for the near-term window.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <span className="sys-tag text-[9px]">SOSOVALUE MACRO CALENDAR</span>
+                    <span className="font-mono text-[10px] text-[#3a3a3a]">{macroEvents.length} DATES</span>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {macroEvents.length === 0 && (
+                      <EmptyState>Macro events will appear when SoSoValue returns `/macro/events` data.</EmptyState>
+                    )}
+                    {macroEvents.map((event) => (
+                      <div key={event.date} className="grid md:grid-cols-[120px_minmax(0,1fr)_96px] gap-4 border-b border-[#1e1e1e] pb-4">
+                        <div>
+                          <div className="font-mono text-[10px] tracking-widest text-[#2196f3]">
+                            {macroTimingLabel(event.daysFromNow).toUpperCase()}
+                          </div>
+                          <div className="mt-1 font-mono text-[10px] text-[#3a3a3a]">
+                            {new Date(`${event.date}T00:00:00Z`).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm text-[#f2ede6] leading-relaxed break-words">{event.events.slice(0, 3).join(", ")}</p>
+                          {event.events.length > 3 && (
+                            <p className="mt-1 font-mono text-[9px] text-[#3a3a3a]">+{event.events.length - 3} MORE EVENTS</p>
+                          )}
+                        </div>
+                        <div className="md:text-right">
+                          <div className="font-display text-2xl text-[#f2ede6]">{event.importanceScore}</div>
+                          <div className="font-mono text-[9px] text-[#3a3a3a] tracking-widest">IMPACT</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === "analytics" && (
-              <div className="grid xl:grid-cols-[1fr_0.9fr] border-b border-[#1e1e1e]">
+              <div id="yieldpilot-panel-analytics" role="tabpanel" aria-labelledby="yieldpilot-tab-analytics" className="grid xl:grid-cols-[1fr_0.9fr] border-b border-[#1e1e1e]">
                 <div className="border-r border-[#1e1e1e] p-6">
                   <div className="flex items-center justify-between mb-5">
                     <span className="sys-tag text-[9px]">ANALYTICS</span>
@@ -898,11 +1035,11 @@ export function YieldPilotConsole() {
                   </div>
                   <div className="grid sm:grid-cols-2 gap-px bg-[#1e1e1e]">
                     {[
-                      { label: "MONTHLY YIELD", value: formatUsd(data?.wave2.analytics.projectedMonthlyYieldUsd ?? 0) },
-                      { label: "ANNUAL YIELD", value: formatUsd(data?.wave2.analytics.projectedAnnualYieldUsd ?? 0) },
-                      { label: "STRESS LOSS", value: `${formatUsd(data?.wave2.analytics.stressLossUsd ?? 0)} / ${data?.wave2.analytics.stressLossPct ?? 0}%` },
-                      { label: "CONFIDENCE", value: `${data?.wave2.analytics.confidenceScore ?? 0}/100` },
-                      { label: "DIVERSIFICATION", value: `${data?.wave2.analytics.diversificationScore ?? 0}/100` },
+                      { label: "MONTHLY YIELD", value: formatUsd(data?.wave3.analytics.projectedMonthlyYieldUsd ?? 0) },
+                      { label: "ANNUAL YIELD", value: formatUsd(data?.wave3.analytics.projectedAnnualYieldUsd ?? 0) },
+                      { label: "STRESS LOSS", value: `${formatUsd(data?.wave3.analytics.stressLossUsd ?? 0)} / ${data?.wave3.analytics.stressLossPct ?? 0}%` },
+                      { label: "CONFIDENCE", value: `${data?.wave3.analytics.confidenceScore ?? 0}/100` },
+                      { label: "DIVERSIFICATION", value: `${data?.wave3.analytics.diversificationScore ?? 0}/100` },
                       { label: "SNAPSHOTS", value: String(snapshots.length) },
                     ].map((metric) => (
                       <div key={metric.label} className="bg-[#080808] p-5 min-h-[112px]">
@@ -912,7 +1049,7 @@ export function YieldPilotConsole() {
                     ))}
                   </div>
                   <p className="mt-5 text-sm text-[#5a5a5a] leading-relaxed">
-                    {data?.wave2.analytics.backtestNote ?? "Waiting for the first local analytics pass."}
+                    {data?.wave3.analytics.backtestNote ?? "Waiting for the first local analytics pass."}
                   </p>
                 </div>
 
@@ -952,7 +1089,7 @@ export function YieldPilotConsole() {
             )}
 
             {tab === "sources" && (
-              <div className="grid xl:grid-cols-3 border-b border-[#1e1e1e]">
+              <div id="yieldpilot-panel-sources" role="tabpanel" aria-labelledby="yieldpilot-tab-sources" className="grid xl:grid-cols-4 border-b border-[#1e1e1e]">
                 <div className="border-r border-[#1e1e1e] p-6">
                   <span className="sys-tag text-[9px] mb-5 block">SOSOVALUE INTELLIGENCE</span>
                   <div className="grid grid-cols-2 gap-px bg-[#1e1e1e] mb-5">
@@ -1004,6 +1141,28 @@ export function YieldPilotConsole() {
                   </div>
                 </div>
 
+                <div className="border-r border-[#1e1e1e] p-6">
+                  <span className="sys-tag text-[9px] mb-5 block">MACRO EVENTS</span>
+                  <div className="flex flex-col gap-3">
+                    {macroEvents.slice(0, 5).map((event) => (
+                      <div key={`source-${event.date}`} className="border-b border-[#1e1e1e] pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-mono text-[11px] text-[#f2ede6]">
+                              {macroTimingLabel(event.daysFromNow).toUpperCase()}
+                            </div>
+                            <p className="mt-1 text-xs text-[#5a5a5a] leading-relaxed">
+                              {event.events.slice(0, 2).join(", ")}
+                            </p>
+                          </div>
+                          <span className="font-display text-2xl text-[#2196f3]">{event.importanceScore}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {macroEvents.length === 0 && <p className="text-sm text-[#5a5a5a]">Macro calendar data will appear when SoSoValue returns `/macro/events` data.</p>}
+                  </div>
+                </div>
+
                 <div className="p-6">
                   <span className="sys-tag text-[9px] mb-5 block">SODEX PULSE</span>
                   <div className="flex flex-col gap-3">
@@ -1022,14 +1181,14 @@ export function YieldPilotConsole() {
                   </div>
                 </div>
 
-                <div className="xl:col-span-3 border-t border-[#1e1e1e] p-6">
+                <div className="xl:col-span-4 border-t border-[#1e1e1e] p-6">
                   <span className="sys-tag text-[9px] mb-5 block">DATA SOURCE HEALTH</span>
                   <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5">
                     {(data?.sources ?? []).map((source) => (
                       <div key={source.name} className="border-l border-[#2e2e2e] pl-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>
-                            <div className="font-mono text-[11px] text-[#f2ede6]">{source.name}</div>
+                            <div className="font-mono text-[11px] text-[#f2ede6] break-words">{source.name}</div>
                             <p className="text-xs text-[#5a5a5a] leading-relaxed mt-1">{source.detail}</p>
                           </div>
                           <span className={`font-mono text-[9px] tracking-widest ${statusTone[source.status] ?? "text-[#5a5a5a]"}`}>
@@ -1063,13 +1222,14 @@ export function YieldPilotConsole() {
               </div>
 
               <div className="p-6">
-                <span className="sys-tag text-[9px] mb-5 block">WAVE 2 STATUS</span>
+                <span className="sys-tag text-[9px] mb-5 block">WAVE 3 STATUS</span>
                 <div className="flex flex-col gap-4">
                   {[
                     { label: "Portfolio tracking", value: snapshots.length > 0 ? "local persistence active" : "waiting for first snapshot" },
                     { label: "Market updates", value: autoRefresh ? "45s local polling" : "manual refresh" },
                     { label: "Custom strategy", value: `${activeConstraints.maxPositions} positions, ${activeConstraints.maxRisk}/100 max risk` },
-                    { label: "Alerts", value: `${data?.wave2.alerts.length ?? 0} active monitors` },
+                    { label: "Macro overlay", value: `${data?.market.macroRiskLabel ?? "pending"} risk, ${macroEvents.length} dates` },
+                    { label: "Alerts", value: `${data?.wave3.alerts.length ?? 0} active monitors` },
                   ].map((item) => (
                     <div key={item.label} className="flex items-start justify-between gap-4">
                       <span className="font-mono text-[10px] tracking-widest text-[#3a3a3a]">{item.label.toUpperCase()}</span>
@@ -1080,7 +1240,7 @@ export function YieldPilotConsole() {
               </div>
             </div>
 
-            {error && <div className="border-t border-[#1e1e1e] p-5 text-sm text-[#ef4444]">{error}</div>}
+            {error && <div className="border-t border-[#1e1e1e] p-5 text-sm text-[#ef4444]" role="alert">{error}</div>}
           </div>
         </div>
       </div>

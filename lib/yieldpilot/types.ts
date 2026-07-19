@@ -89,10 +89,20 @@ export interface SosoIndexSnapshot {
   ytd: number;
 }
 
+export interface MacroEvent {
+  date: string;
+  events: string[];
+  daysFromNow: number;
+  horizon: "past" | "today" | "upcoming";
+  importanceScore: number;
+}
+
 export interface MarketPulse {
   moodLabel: string;
   moodScore: number;
   volatilityLabel: string;
+  macroRiskLabel: "Calm" | "Watch" | "Event Risk";
+  macroRiskScore: number;
   newsSentiment: number;
   etfNetFlowUsd: number;
   etfFlowDirection: "inflow" | "outflow" | "flat" | "unknown";
@@ -101,6 +111,7 @@ export interface MarketPulse {
   etfFlows: EtfFlowPoint[];
   sodexTickers: SodexTicker[];
   sosoIndexes: SosoIndexSnapshot[];
+  macroEvents: MacroEvent[];
 }
 
 export interface RiskEvent {
@@ -201,7 +212,7 @@ export interface YieldPilotMarketResponse {
   opportunities: YieldOpportunity[];
   market: MarketPulse;
   riskEvents: RiskEvent[];
-  wave2: {
+  wave3: {
     snapshots: PortfolioSnapshot[];
     riskHistory: RiskHistoryPoint[];
     alerts: StrategyAlert[];

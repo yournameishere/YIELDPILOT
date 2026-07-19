@@ -9,7 +9,7 @@ const FEATURES = [
     id: "01",
     tag: "CUSTODY",
     title: "SIMULATION FIRST",
-    desc: "Wave 2 never moves real funds. The app proves the intelligence loop with simulated allocations, local snapshots, alerts, and visible execution logs.",
+    desc: "Wave 3 production simulation never moves real funds. The app proves the intelligence loop with simulated allocations, macro-aware alerts, local snapshots, and visible execution logs.",
   },
   {
     id: "02",
@@ -27,7 +27,7 @@ const FEATURES = [
     id: "04",
     tag: "APPROVAL",
     title: "USER IN CONTROL",
-    desc: "The pilot recommends and simulates. Wave 2 and Wave 3 execution paths keep user approval and smart contract controls explicit.",
+    desc: "The pilot recommends and simulates. Any future execution path keeps user approval and smart contract controls explicit.",
   },
 ];
 
@@ -50,11 +50,11 @@ export function SecuritySection() {
 
         {/* Header row */}
         <div
-          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-all duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
+          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-opacity duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
         >
           <div>
             <span className="sys-tag mb-3 block">TRUST &amp; SAFETY</span>
-            <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">
+            <h2 className="font-display text-6xl lg:text-8xl leading-[1.02] text-[#f2ede6]">
               YIELD AI YOU<br />
               <span style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>CAN TRUST</span>
             </h2>
@@ -64,7 +64,7 @@ export function SecuritySection() {
             {CERTS.map((c, i) => (
               <span
                 key={c}
-                className={`font-mono text-[9px] tracking-widest border border-[#2e2e2e] px-3 py-2 text-[#5a5a5a] hover:border-[#2196f3]/40 hover:text-[#2196f3] transition-all duration-200 cursor-default ${
+                className={`font-mono text-[9px] tracking-widest border border-[#2e2e2e] px-3 py-2 text-[#5a5a5a] hover:border-[#2196f3]/40 hover:text-[#2196f3] transition-[opacity,transform,border-color,color] duration-200 cursor-default ${
                   vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
                 }`}
                 style={{ transitionDelay: `${i * 50 + 200}ms` }}
@@ -80,7 +80,7 @@ export function SecuritySection() {
           {FEATURES.map((f, i) => (
             <div
               key={f.id}
-              className={`border-r border-[#1e1e1e] last:border-r-0 p-6 row-hover transition-all duration-500 group ${
+              className={`border-r border-[#1e1e1e] last:border-r-0 p-6 row-hover transition-[opacity,transform,background-color] duration-500 group ${
                 vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
               }`}
               style={{ transitionDelay: `${i * 80}ms` }}
@@ -183,7 +183,7 @@ export function SecuritySection() {
                 <span className="sys-tag text-[9px]">{f.tag}</span>
                 <span className="font-mono text-[9px] text-[#2e2e2e]">{f.id}</span>
               </div>
-              <h3 className="font-display text-2xl leading-[0.9] text-[#f2ede6] mb-3 group-hover:text-[#2196f3] transition-colors">
+              <h3 className="font-display text-2xl leading-[1.05] text-[#f2ede6] mb-3 group-hover:text-[#2196f3] transition-colors">
                 {f.title}
               </h3>
               <p className="text-sm text-[#5a5a5a] leading-relaxed">{f.desc}</p>
@@ -194,7 +194,7 @@ export function SecuritySection() {
         {/* Bottom note */}
         <div className="py-5 flex items-center justify-between">
           <span className="font-mono text-[10px] text-[#3a3a3a]">
-            WAVE 2 USES SIMULATION MODE UNTIL CONTRACT EXECUTION IS SECURITY REVIEWED
+            WAVE 3 USES SIMULATION MODE UNTIL CONTRACT EXECUTION IS SECURITY REVIEWED
           </span>
           <a href="#developers" className="font-mono text-[10px] text-[#2196f3] hover:underline tracking-wider">
             SAFETY MODEL -&gt;

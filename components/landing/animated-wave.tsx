@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 export function AnimatedWave() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,12 +45,12 @@ export function AnimatedWave() {
           const px = (x + 0.5) * (rect.width / cols);
           const py = (y + 0.5) * (rect.height / rows);
 
-          // Multiple wave interference
-          const wave1 = Math.sin(x * 0.2 + time * 2) * Math.cos(y * 0.15 + time);
-          const wave2 = Math.sin((x + y) * 0.1 + time * 1.5);
-          const wave3 = Math.cos(x * 0.1 - y * 0.1 + time * 0.8);
+          // Multiple harmonic interference
+          const harmonicA = Math.sin(x * 0.2 + time * 2) * Math.cos(y * 0.15 + time);
+          const harmonicB = Math.sin((x + y) * 0.1 + time * 1.5);
+          const harmonicC = Math.cos(x * 0.1 - y * 0.1 + time * 0.8);
           
-          const combined = (wave1 + wave2 + wave3) / 3;
+          const combined = (harmonicA + harmonicB + harmonicC) / 3;
           const normalized = (combined + 1) / 2;
           
           const charIndex = Math.floor(normalized * (chars.length - 1));
@@ -59,8 +61,10 @@ export function AnimatedWave() {
         }
       }
 
-      time += 0.03;
-      frameRef.current = requestAnimationFrame(render);
+      if (!reducedMotion) {
+        time += 0.03;
+        frameRef.current = requestAnimationFrame(render);
+      }
     };
 
     render();
@@ -69,7 +73,7 @@ export function AnimatedWave() {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(frameRef.current);
     };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <canvas

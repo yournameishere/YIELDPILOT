@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const STEPS = [
   {
@@ -15,7 +16,7 @@ const STEPS = [
   maxRisk: 58
 }
 
-// Wallet connect is optional for Wave 2`,
+// Wallet connect is optional for Wave 3 simulation`,
   },
   {
     id: "02",
@@ -42,7 +43,7 @@ const STEPS = [
   protectiveExit: true
 })
 
-// Wave 2 proves the observable strategy loop`,
+// Wave 3 proves the observable strategy loop`,
   },
 ];
 
@@ -50,6 +51,7 @@ export function HowItWorksSection() {
   const [active, setActive]   = useState(0);
   const [vis, setVis]         = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -61,9 +63,10 @@ export function HowItWorksSection() {
   }, []);
 
   useEffect(() => {
+    if (reducedMotion) return;
     const id = setInterval(() => setActive(a => (a + 1) % STEPS.length), 5000);
     return () => clearInterval(id);
-  }, []);
+  }, [reducedMotion]);
 
   const step = STEPS[active];
 
@@ -73,11 +76,11 @@ export function HowItWorksSection() {
 
         {/* Header row */}
         <div
-          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-all duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
+          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-opacity duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
         >
           <div>
             <span className="sys-tag mb-3 block">PROCESS</span>
-            <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">
+            <h2 className="font-display text-6xl lg:text-8xl leading-[1.02] text-[#f2ede6]">
               RUN IN<br />
               <span style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>THREE STEPS</span>
             </h2>
@@ -95,7 +98,7 @@ export function HowItWorksSection() {
               <button
                 key={s.id}
                 onClick={() => setActive(i)}
-                className={`w-full text-left border-b border-[#1e1e1e] p-6 transition-all duration-200 group ${
+                className={`w-full text-left border-b border-[#1e1e1e] p-6 transition-colors duration-200 group ${
                   active === i ? "bg-[#0e0e0e]" : "hover:bg-[#0a0a0a]"
                 }`}
               >
@@ -103,7 +106,7 @@ export function HowItWorksSection() {
                   <span className="font-mono text-[9px] text-[#3a3a3a] tracking-widest">{s.tag}</span>
                   <span className="font-mono text-[10px] text-[#3a3a3a]">{s.id}</span>
                 </div>
-                <h3 className={`font-display text-2xl leading-[0.9] transition-colors ${
+                <h3 className={`font-display text-2xl leading-[1.05] transition-colors ${
                   active === i ? "text-[#2196f3]" : "text-[#3a3a3a] group-hover:text-[#5a5a5a]"
                 }`}>
                   {s.title}
@@ -114,7 +117,7 @@ export function HowItWorksSection() {
                     <div
                       key={active}
                       className="h-full bg-[#2196f3]"
-                      style={{ width: 0, animation: "draw-line 5s linear forwards" }}
+                      style={{ width: reducedMotion ? "100%" : 0, animation: reducedMotion ? "none" : "draw-line 5s linear forwards" }}
                     />
                   </div>
                 )}

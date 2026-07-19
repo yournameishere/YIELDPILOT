@@ -1,6 +1,7 @@
 import type {
   DataSourceStatus,
   EtfFlowPoint,
+  MacroEvent,
   MarketPulse,
   NewsItem,
   OpenAiInsight,
@@ -19,9 +20,25 @@ import type {
   YieldPilotStrategy,
 } from "@/lib/yieldpilot/types";
 
-const SOSOVALUE_BASE_URL = "https://openapi.sosovalue.com/openapi/v1";
-const OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFILLAMA_POOLS_URL = "https://yields.llama.fi/pools";
+const DEFAULT_SOSOVALUE_BASE_URL = "https://openapi.sosovalue.com/openapi/v1";
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_DEFILLAMA_POOLS_URL = "https://yields.llama.fi/pools";
+
+const SOSOVALUE_CONFIG = resolveConfiguredHttpsUrl(
+  process.env.SOSOVALUE_BASE_URL,
+  DEFAULT_SOSOVALUE_BASE_URL,
+  "SOSOVALUE_BASE_URL",
+);
+const OPENAI_CONFIG = resolveConfiguredHttpsUrl(process.env.OPENAI_BASE_URL, DEFAULT_OPENAI_BASE_URL, "OPENAI_BASE_URL");
+const DEFILLAMA_POOLS_CONFIG = resolveConfiguredHttpsUrl(
+  process.env.DEFILLAMA_POOLS_URL,
+  DEFAULT_DEFILLAMA_POOLS_URL,
+  "DEFILLAMA_POOLS_URL",
+);
+
+const SOSOVALUE_BASE_URL = SOSOVALUE_CONFIG.url;
+const OPENAI_BASE_URL = OPENAI_CONFIG.url;
+const DEFILLAMA_POOLS_URL = DEFILLAMA_POOLS_CONFIG.url;
 
 const SODEX_ENDPOINTS = {
   testnet: {
@@ -41,6 +58,7 @@ const CACHE_TTL = {
   openAiInsight: 60_000,
 };
 
+const MAX_MEMORY_CACHE_ENTRIES = 128;
 const memoryCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
 
 const GOAL_CONFIG: Record<
@@ -226,6 +244,11 @@ interface SosoIndexRaw {
   ytd?: number | string;
 }
 
+interface SosoMacroEventRaw {
+  date?: string;
+  events?: unknown[];
+}
+
 interface SodexEnvelope<T> {
   code?: number;
   timestamp?: number;
@@ -299,6 +322,7 @@ function hashText(input: string) {
 
 async function withTtlCache<T>(key: string, ttlMs: number, factory: () => Promise<T>): Promise<T> {
   const now = Date.now();
+  pruneMemoryCache(now);
   const cached = memoryCache.get(key);
   if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
 
@@ -310,7 +334,20 @@ async function withTtlCache<T>(key: string, ttlMs: number, factory: () => Promis
   });
 
   memoryCache.set(key, { expiresAt: now + ttlMs, promise: cachedPromise });
+  pruneMemoryCache();
   return cachedPromise;
+}
+
+function pruneMemoryCache(now = Date.now()) {
+  for (const [key, entry] of memoryCache) {
+    if (entry.expiresAt <= now) memoryCache.delete(key);
+  }
+
+  while (memoryCache.size > MAX_MEMORY_CACHE_ENTRIES) {
+    const oldestKey = memoryCache.keys().next().value;
+    if (!oldestKey) break;
+    memoryCache.delete(oldestKey);
+  }
 }
 
 function displayName(value: string | undefined) {
@@ -674,6 +711,67 @@ function normalizeSosoIndex(ticker: string, row: SosoIndexRaw | undefined): Soso
   };
 }
 
+function parseDateOnlyUtc(value: string | undefined) {
+  if (!value) return Number.NaN;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return Number.NaN;
+  return Date.UTC(year, month - 1, day);
+}
+
+function todayUtcMs() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+
+function macroImportanceScore(events: string[]) {
+  const joined = events.join(" ").toLowerCase();
+  let score = Math.min(28, events.length * 7);
+
+  const highImpact = ["cpi", "pce", "inflation", "fomc", "fed", "rate", "payroll", "unemployment", "gdp"];
+  const mediumImpact = ["ppi", "pmi", "retail", "claims", "treasury", "confidence", "industrial"];
+
+  for (const keyword of highImpact) if (joined.includes(keyword)) score += 16;
+  for (const keyword of mediumImpact) if (joined.includes(keyword)) score += 8;
+
+  return clamp(Math.round(score), 0, 100);
+}
+
+function normalizeMacroEvents(rows: SosoMacroEventRaw[] | undefined): MacroEvent[] {
+  const today = todayUtcMs();
+
+  return (rows ?? [])
+    .map((row): MacroEvent | null => {
+      const dateMs = parseDateOnlyUtc(row.date);
+      if (!Number.isFinite(dateMs) || !row.date) return null;
+
+      const eventRows = Array.isArray(row.events) ? row.events : [];
+      const events = eventRows
+        .filter((event): event is string => typeof event === "string")
+        .map((event) => event.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+      if (events.length === 0) return null;
+
+      const daysFromNow = Math.round((dateMs - today) / 86_400_000);
+      return {
+        date: row.date,
+        events,
+        daysFromNow,
+        horizon: daysFromNow === 0 ? "today" : daysFromNow > 0 ? "upcoming" : "past",
+        importanceScore: macroImportanceScore(events),
+      };
+    })
+    .filter((event): event is MacroEvent => Boolean(event))
+    .filter((event) => event.daysFromNow >= -7 && event.daysFromNow <= 30)
+    .sort((left, right) => {
+      const leftUpcoming = left.daysFromNow >= 0 ? 0 : 1;
+      const rightUpcoming = right.daysFromNow >= 0 ? 0 : 1;
+      if (leftUpcoming !== rightUpcoming) return leftUpcoming - rightUpcoming;
+      return Math.abs(left.daysFromNow) - Math.abs(right.daysFromNow);
+    })
+    .slice(0, 10);
+}
+
 function normalizeSodexTickers(rows: SodexTickerRaw[] | undefined): SodexTicker[] {
   return (rows ?? [])
     .map((row) => ({
@@ -699,7 +797,7 @@ function unwrapSoso<T>(payload: SosoEnvelope<T> | T): T {
 }
 
 async function getDefiLlamaPools() {
-  return withTtlCache("defillama:pools", CACHE_TTL.defillamaPools, () =>
+  return withTtlCache(`defillama:pools:${DEFILLAMA_POOLS_URL}`, CACHE_TTL.defillamaPools, () =>
     fetchJson<DefiLlamaPoolsResponse>(DEFILLAMA_POOLS_URL, undefined, 15_000),
   );
 }
@@ -713,7 +811,7 @@ async function getSosoMarket(apiKey: string | undefined) {
   const source: DataSourceStatus = {
     name: "SoSoValue",
     status: "missing_key",
-    detail: "Set SOSOVALUE_API_KEY to enable live news and ETF flow intelligence.",
+    detail: "Set SOSOVALUE_API_KEY to enable live news, ETF flow, index, and macro intelligence.",
   };
 
   if (!apiKey) {
@@ -722,13 +820,14 @@ async function getSosoMarket(apiKey: string | undefined) {
       news: [] as NewsItem[],
       etfFlows: [] as EtfFlowPoint[],
       indexes: [] as SosoIndexSnapshot[],
+      macroEvents: [] as MacroEvent[],
     };
   }
 
-  return withTtlCache(`soso:market:${hashText(apiKey)}`, CACHE_TTL.sosoMarket, async () => {
+  return withTtlCache(`soso:market:${SOSOVALUE_BASE_URL}:${hashText(apiKey)}`, CACHE_TTL.sosoMarket, async () => {
   try {
     const headers = { "x-soso-api-key": apiKey };
-    const [newsResult, btcResult, ethResult, indexListResult] = await Promise.allSettled([
+    const [newsResult, btcResult, ethResult, indexListResult, macroResult] = await Promise.allSettled([
       fetchJson<SosoEnvelope<SosoNewsPage>>(
         `${SOSOVALUE_BASE_URL}/news/hot?page=1&page_size=8&language=en`,
         { headers },
@@ -744,13 +843,18 @@ async function getSosoMarket(apiKey: string | undefined) {
         { headers },
         12_000,
       ),
-      fetchJson<SosoEnvelope<string[]>>(`${SOSOVALUE_BASE_URL}/indices`, { headers }, 12_000),
+      fetchJson<SosoEnvelope<string[]> | string[]>(`${SOSOVALUE_BASE_URL}/indices`, { headers }, 12_000),
+      fetchJson<SosoEnvelope<SosoMacroEventRaw[]> | SosoMacroEventRaw[]>(
+        `${SOSOVALUE_BASE_URL}/macro/events`,
+        { headers },
+        12_000,
+      ),
     ]);
 
     const failedParts: string[] = [];
     const failureText = (error: unknown) =>
       sanitizeSecretBearingError(error instanceof Error ? error.message : "request failed", "SoSoValue");
-    const readPart = <T>(part: string, result: PromiseSettledResult<SosoEnvelope<T>>, fallback: T) => {
+    const readPart = <T>(part: string, result: PromiseSettledResult<SosoEnvelope<T> | T>, fallback: T) => {
       try {
         if (result.status !== "fulfilled") throw result.reason;
         const data = unwrapSoso(result.value);
@@ -767,6 +871,7 @@ async function getSosoMarket(apiKey: string | undefined) {
       ...normalizeEtfFlows("BTC", readPart("BTC ETF flow", btcResult, [] as SosoEtfRaw[])),
       ...normalizeEtfFlows("ETH", readPart("ETH ETF flow", ethResult, [] as SosoEtfRaw[])),
     ];
+    const macroEvents = normalizeMacroEvents(readPart("macro events", macroResult, [] as SosoMacroEventRaw[]));
     const indexTickers = readPart("index list", indexListResult, [] as string[]).slice(0, 3);
     const resolvedTickers = indexTickers.length > 0 ? indexTickers : ["ssimag7"];
     const fetchIndexSnapshot = (ticker: string) =>
@@ -793,16 +898,21 @@ async function getSosoMarket(apiKey: string | undefined) {
       }
     }
     const status: SourceStatus =
-      failedParts.length === 0 ? "live" : news.length > 0 || etfFlows.length > 0 || indexes.length > 0 ? "degraded" : "error";
+      failedParts.length === 0
+        ? "live"
+        : news.length > 0 || etfFlows.length > 0 || indexes.length > 0 || macroEvents.length > 0
+          ? "degraded"
+          : "error";
+    const configNotice = SOSOVALUE_CONFIG.notice ? `${SOSOVALUE_CONFIG.notice} ` : "";
     const detail =
       status === "live"
-        ? `Hot crypto news, BTC/ETH ETF flows, and ${indexes.length} SoSoValue Index snapshots are live.`
+        ? `${configNotice}Hot crypto news, BTC/ETH ETF flows, ${indexes.length} SoSoValue Index snapshots, and ${macroEvents.length} macro calendar dates are live.`
         : status === "degraded"
-          ? `Partial SoSoValue data is live: ${news.length} news items, ${etfFlows.length} ETF rows, and ${indexes.length}/${resolvedTickers.length} index snapshots. Degraded parts: ${failedParts
+          ? `${configNotice}Partial SoSoValue data is live: ${news.length} news items, ${etfFlows.length} ETF rows, ${indexes.length}/${resolvedTickers.length} index snapshots, and ${macroEvents.length} macro dates. Degraded parts: ${failedParts
               .map((part) => part.split(":")[0])
               .slice(0, 4)
               .join(", ")}.`
-          : `SoSoValue returned no usable data. ${failedParts[0] ?? "Check API key and network access."}`;
+          : `${configNotice}SoSoValue returned no usable data. ${failedParts[0] ?? "Check API key and network access."}`;
 
     return {
       source: {
@@ -814,6 +924,7 @@ async function getSosoMarket(apiKey: string | undefined) {
       news,
       etfFlows,
       indexes,
+      macroEvents,
     };
   } catch (error) {
     return {
@@ -825,6 +936,7 @@ async function getSosoMarket(apiKey: string | undefined) {
       news: [] as NewsItem[],
       etfFlows: [] as EtfFlowPoint[],
       indexes: [] as SosoIndexSnapshot[],
+      macroEvents: [] as MacroEvent[],
     };
   }
   });
@@ -832,6 +944,22 @@ async function getSosoMarket(apiKey: string | undefined) {
 
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function resolveConfiguredHttpsUrl(value: string | undefined, fallback: string, envName: string) {
+  if (!value?.trim()) return { url: fallback, notice: "" };
+
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") throw new Error("Only HTTPS endpoints are allowed.");
+    url.hash = "";
+    return { url: trimTrailingSlash(url.toString()), notice: "" };
+  } catch {
+    return {
+      url: fallback,
+      notice: `Configured ${envName} was invalid; using the default endpoint.`,
+    };
+  }
 }
 
 function resolveSodexSpotEndpoint() {
@@ -845,19 +973,15 @@ function resolveSodexSpotEndpoint() {
 
   try {
     const url = new URL(configuredEndpoint);
-    const allowedOrigins = new Set(Object.values(SODEX_ENDPOINTS).map((endpoint) => new URL(endpoint.spot).origin));
-    const path = trimTrailingSlash(url.pathname);
-    const isAllowedEndpoint = url.protocol === "https:" && allowedOrigins.has(url.origin) && path === "/api/v1/spot";
-
-    if (!isAllowedEndpoint) {
+    if (url.protocol !== "https:") {
       return {
         env,
         spotEndpoint: fallback,
-        endpointNotice: "Configured SODEX_SPOT_ENDPOINT was rejected; using the known SoDEX spot endpoint.",
+        endpointNotice: "Configured SODEX_SPOT_ENDPOINT was rejected because only HTTPS endpoints are allowed; using the known SoDEX spot endpoint.",
       };
     }
 
-    url.pathname = path;
+    url.pathname = trimTrailingSlash(url.pathname);
     url.search = "";
     url.hash = "";
     return { env, spotEndpoint: trimTrailingSlash(url.toString()), endpointNotice: "" };
@@ -874,32 +998,32 @@ async function getSodexTickers() {
   const { env, spotEndpoint, endpointNotice } = resolveSodexSpotEndpoint();
 
   return withTtlCache(`sodex:${env}:${spotEndpoint}`, CACHE_TTL.sodexTickers, async () => {
-  try {
-    const payload = await fetchJson<SodexEnvelope<SodexTickerRaw[]>>(`${spotEndpoint}/markets/tickers`, undefined, 12_000);
-    if (payload.code !== 0) throw new Error("SoDEX ticker request returned a non-zero code.");
+    try {
+      const payload = await fetchJson<SodexEnvelope<SodexTickerRaw[]>>(`${spotEndpoint}/markets/tickers`, undefined, 12_000);
+      if (payload.code !== 0) throw new Error("SoDEX ticker request returned a non-zero code.");
 
-    return {
-      source: {
-        name: "SoDEX",
-        status: "live" as const,
-        detail: `${endpointNotice ? `${endpointNotice} ` : ""}${env} public spot ticker feed is live.`,
-        updatedAt: new Date(payload.timestamp ?? Date.now()).toISOString(),
-      },
-      tickers: normalizeSodexTickers(payload.data),
-    };
-  } catch (error) {
-    return {
-      source: {
-        name: "SoDEX",
-        status: "error" as const,
-        detail: sanitizeSecretBearingError(
-          `${endpointNotice ? `${endpointNotice} ` : ""}${error instanceof Error ? error.message : "SoDEX ticker request failed."}`,
-          "SoDEX",
-        ),
-      },
-      tickers: [] as SodexTicker[],
-    };
-  }
+      return {
+        source: {
+          name: "SoDEX",
+          status: "live" as const,
+          detail: `${endpointNotice ? `${endpointNotice} ` : ""}${env} public spot ticker feed is live.`,
+          updatedAt: new Date(payload.timestamp ?? Date.now()).toISOString(),
+        },
+        tickers: normalizeSodexTickers(payload.data),
+      };
+    } catch (error) {
+      return {
+        source: {
+          name: "SoDEX",
+          status: "error" as const,
+          detail: sanitizeSecretBearingError(
+            `${endpointNotice ? `${endpointNotice} ` : ""}${error instanceof Error ? error.message : "SoDEX ticker request failed."}`,
+            "SoDEX",
+          ),
+        },
+        tickers: [] as SodexTicker[],
+      };
+    }
   });
 }
 
@@ -908,6 +1032,7 @@ function buildMarketPulse(
   etfFlows: EtfFlowPoint[],
   sodexTickers: SodexTicker[],
   sosoIndexes: SosoIndexSnapshot[],
+  macroEvents: MacroEvent[],
 ): MarketPulse {
   const newsSentiment = sentimentFromNews(news);
   const latestBySymbol = new Map<string, EtfFlowPoint>();
@@ -929,13 +1054,25 @@ function buildMarketPulse(
       : sodexTickers.reduce((sum, ticker) => sum + Math.abs(ticker.changePct), 0) / sodexTickers.length;
   const indexAverageMovePct =
     sosoIndexes.length === 0 ? 0 : sosoIndexes.reduce((sum, index) => sum + index.change24hPct, 0) / sosoIndexes.length;
+  const nearTermMacroEvents = macroEvents.filter((event) => event.daysFromNow >= 0 && event.daysFromNow <= 7);
+  const macroRiskScore =
+    nearTermMacroEvents.length === 0
+      ? 0
+      : clamp(
+          Math.max(...nearTermMacroEvents.map((event) => event.importanceScore - Math.max(event.daysFromNow, 0) * 3)),
+          0,
+          100,
+        );
+  const macroRiskLabel: MarketPulse["macroRiskLabel"] =
+    macroRiskScore >= 60 ? "Event Risk" : macroRiskScore >= 30 ? "Watch" : "Calm";
 
   const moodScore = clamp(
     50 +
       newsSentiment * 0.22 +
       clamp(etfNetFlowUsd / 100_000_000, -16, 16) +
       clamp(sodexAverageMovePct * 2.2, -12, 12) +
-      clamp(indexAverageMovePct * 1.5, -8, 8),
+      clamp(indexAverageMovePct * 1.5, -8, 8) -
+      clamp(macroRiskScore * 0.12, 0, 10),
     0,
     100,
   );
@@ -948,6 +1085,8 @@ function buildMarketPulse(
     moodLabel,
     moodScore: Math.round(moodScore),
     volatilityLabel,
+    macroRiskLabel,
+    macroRiskScore: Math.round(macroRiskScore),
     newsSentiment: Math.round(newsSentiment),
     etfNetFlowUsd: round(etfNetFlowUsd, 2),
     etfFlowDirection,
@@ -956,7 +1095,16 @@ function buildMarketPulse(
     etfFlows,
     sodexTickers,
     sosoIndexes,
+    macroEvents,
   };
+}
+
+function macroTiming(event: MacroEvent) {
+  if (event.daysFromNow === 0) return "today";
+  if (event.daysFromNow === 1) return "tomorrow";
+  if (event.daysFromNow > 1) return `in ${event.daysFromNow} days`;
+  if (event.daysFromNow === -1) return "yesterday";
+  return `${Math.abs(event.daysFromNow)} days ago`;
 }
 
 function buildRiskEvents(
@@ -984,6 +1132,17 @@ function buildRiskEvents(
       level: "warning",
       title: "SoDEX volatility spike",
       detail: `Average tracked SoDEX move is ${market.sodexAverageMovePct}%. Rebalance simulation is ready to exit unstable legs.`,
+    });
+  }
+
+  const nextMacroEvent = market.macroEvents.find((event) => event.daysFromNow >= 0);
+  if (nextMacroEvent && market.macroRiskLabel !== "Calm") {
+    events.push({
+      level: market.macroRiskLabel === "Event Risk" ? "warning" : "watch",
+      title: "Macro calendar risk",
+      detail: `${nextMacroEvent.events.slice(0, 2).join(", ")} is scheduled ${macroTiming(
+        nextMacroEvent,
+      )}. YieldPilot tightens risk review before fresh allocations.`,
     });
   }
 
@@ -1042,12 +1201,12 @@ function deterministicInsight(
       ? `Keep the current simulated allocation led by ${top.protocol}; it has ${top.apy}% APY, ${top.riskScore}/100 risk, and fits the ${strategy.goalLabel.toLowerCase()} profile.`
       : "Refresh the market scan or choose a less restrictive goal before activating a strategy.",
     riskNote: bestPool
-      ? `Market mood is ${market.moodLabel.toLowerCase()}, SoDEX volatility is ${market.volatilityLabel.toLowerCase()}, and the top watched pool risk is ${bestPool.riskScore}/100.`
-      : `Market mood is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} volatility, but no allocation passed filters.`,
+      ? `Market mood is ${market.moodLabel.toLowerCase()}, SoDEX volatility is ${market.volatilityLabel.toLowerCase()}, macro risk is ${market.macroRiskLabel.toLowerCase()}, and the top watched pool risk is ${bestPool.riskScore}/100.`
+      : `Market mood is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} volatility and ${market.macroRiskLabel.toLowerCase()} macro risk, but no allocation passed filters.`,
     nextAction: detail,
     reasoning: [
       `Constraint gate: max risk ${strategy.constraints.maxRisk}, min TVL ${formatUsdForText(strategy.constraints.minTvlUsd)}, max APY ${strategy.constraints.maxApy}%.`,
-      `Market gate: ${market.moodLabel} mood, ${market.volatilityLabel} SoDEX volatility, ${market.etfFlowDirection} ETF flow.`,
+      `Market gate: ${market.moodLabel} mood, ${market.volatilityLabel} SoDEX volatility, ${market.etfFlowDirection} ETF flow, ${market.macroRiskLabel} macro risk.`,
       top ? `Allocation gate: ${top.protocol} leads because ${top.reason}.` : "Allocation gate: no pool passed the selected constraints.",
     ],
   };
@@ -1082,7 +1241,7 @@ async function getOpenAiInsight(
       source: {
         name: "OpenAI",
         status: "missing_key",
-        detail: "Set OPENAI_API_KEY to enable model-generated strategy reasoning.",
+        detail: `${OPENAI_CONFIG.notice ? `${OPENAI_CONFIG.notice} ` : ""}Set OPENAI_API_KEY to enable model-generated strategy reasoning.`,
       },
       insight: deterministicInsight(
         strategy,
@@ -1109,82 +1268,89 @@ async function getOpenAiInsight(
       mood: market.moodLabel,
       moodScore: market.moodScore,
       volatility: market.volatilityLabel,
+      macroRisk: market.macroRiskLabel,
+      macroRiskScore: market.macroRiskScore,
       etfFlowDirection: market.etfFlowDirection,
       etfNetFlowUsd: market.etfNetFlowUsd,
       sodexAverageMovePct: market.sodexAverageMovePct,
       latestNews: market.news.slice(0, 3).map((item) => item.title),
       sosoIndexes: market.sosoIndexes.slice(0, 3),
+      macroEvents: market.macroEvents.slice(0, 4),
       topSodexTickers: market.sodexTickers.slice(0, 4),
     },
     topOpportunities: opportunities.slice(0, 5),
   };
 
-  const cacheKey = `openai:${model}:${hashText(JSON.stringify(promptPayload))}`;
+  const cacheKey = `openai:${OPENAI_BASE_URL}:${model}:${hashText(JSON.stringify(promptPayload))}`;
 
-  return withTtlCache(cacheKey, CACHE_TTL.openAiInsight, async () => {
   try {
-    const response = await fetchJson<OpenAiResponsePayload>(
-      `${OPENAI_BASE_URL}/responses`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          instructions:
-            "You are YieldPilot AI, an autonomous DeFi yield risk analyst. Use only the supplied JSON. Do not invent protocols, APYs, prices, or news. This is simulation-only and not financial advice. Return strict JSON only.",
-          input: `Create a concise strategy explanation from this live payload. Return only valid JSON in this exact shape: {"headline":"...","summary":"...","recommendation":"...","riskNote":"...","nextAction":"...","reasoning":["constraint reason","market reason","rebalance reason"]}\n${JSON.stringify(promptPayload)}`,
-          text: {
-            format: { type: "json_object" },
+    return await withTtlCache(cacheKey, CACHE_TTL.openAiInsight, async () => {
+      const response = await fetchJson<OpenAiResponsePayload>(
+        `${OPENAI_BASE_URL}/responses`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
           },
-          max_output_tokens: 520,
-          temperature: 0.2,
-        }),
-      },
-      20_000,
-    );
+          body: JSON.stringify({
+            model,
+            instructions:
+              "You are YieldPilot AI, an autonomous DeFi yield risk analyst. Use only the supplied JSON. Do not invent protocols, APYs, prices, or news. This is simulation-only and not financial advice. Return strict JSON only.",
+            input: `Create a concise strategy explanation from this live payload. Return only valid JSON in this exact shape: {"headline":"...","summary":"...","recommendation":"...","riskNote":"...","nextAction":"...","reasoning":["constraint reason","market reason","rebalance reason"]}\n${JSON.stringify(promptPayload)}`,
+            text: {
+              format: { type: "json_object" },
+            },
+            max_output_tokens: 520,
+            temperature: 0.2,
+          }),
+        },
+        20_000,
+      );
 
-    if (response.error?.message) throw new Error(response.error.message);
+      if (response.error?.message) throw new Error(response.error.message);
 
-    const text = extractOpenAiText(response);
-    const parsed = parseOpenAiDecision(text);
-    const resolvedModel = response.model ?? model;
-    const fallback = deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel);
-    const reasoning = (Array.isArray(parsed.reasoning) ? parsed.reasoning : [])
-      .map((line) => compactLine(line, "", 150))
-      .filter(Boolean)
-      .slice(0, 4);
+      const text = extractOpenAiText(response);
+      const parsed = parseOpenAiDecision(text);
+      const resolvedModel = response.model ?? model;
+      const fallback = deterministicInsight(strategy, market, opportunities, "live", "", resolvedModel);
+      const reasoning = (Array.isArray(parsed.reasoning) ? parsed.reasoning : [])
+        .map((line) => compactLine(line, "", 150))
+        .filter(Boolean)
+        .slice(0, 4);
 
-    return {
-      source: {
-        name: "OpenAI",
-        status: "live",
-        detail: `Responses API generated strategy reasoning with ${resolvedModel}.`,
-        updatedAt: new Date().toISOString(),
-      },
-      insight: {
-        provider: "OpenAI",
-        model: resolvedModel,
-        status: "live",
-        headline: compactLine(parsed.headline, fallback.headline, 90),
-        summary: compactLine(parsed.summary, fallback.summary),
-        recommendation: compactLine(
-          parsed.recommendation,
-          fallback.recommendation,
-        ),
-        riskNote: compactLine(parsed.riskNote, fallback.riskNote),
-        nextAction: compactLine(
-          parsed.nextAction,
-          "Activate the simulation only after reviewing the allocation and source health.",
-          150,
-        ),
-        reasoning: reasoning.length > 0 ? reasoning : fallback.reasoning,
-      },
-    };
+      return {
+        source: {
+          name: "OpenAI",
+          status: "live",
+          detail: `${OPENAI_CONFIG.notice ? `${OPENAI_CONFIG.notice} ` : ""}Responses API generated strategy reasoning with ${resolvedModel}.`,
+          updatedAt: new Date().toISOString(),
+        },
+        insight: {
+          provider: "OpenAI",
+          model: resolvedModel,
+          status: "live",
+          headline: compactLine(parsed.headline, fallback.headline, 90),
+          summary: compactLine(parsed.summary, fallback.summary),
+          recommendation: compactLine(
+            parsed.recommendation,
+            fallback.recommendation,
+          ),
+          riskNote: compactLine(parsed.riskNote, fallback.riskNote),
+          nextAction: compactLine(
+            parsed.nextAction,
+            "Activate the simulation only after reviewing the allocation and source health.",
+            150,
+          ),
+          reasoning: reasoning.length > 0 ? reasoning : fallback.reasoning,
+        },
+      };
+    });
   } catch (error) {
-    const detail = sanitizeSecretBearingError(error instanceof Error ? error.message : "OpenAI request failed.", "OpenAI");
+    const detail = sanitizeSecretBearingError(
+      `${OPENAI_CONFIG.notice ? `${OPENAI_CONFIG.notice} ` : ""}${error instanceof Error ? error.message : "OpenAI request failed."}`,
+      "OpenAI",
+    );
     return {
       source: {
         name: "OpenAI",
@@ -1201,7 +1367,6 @@ async function getOpenAiInsight(
       ),
     };
   }
-  });
 }
 
 function buildStrategy(
@@ -1227,6 +1392,17 @@ function buildStrategy(
 
   if (market.etfFlowDirection !== "unknown") {
     rationale.push(`ETF flow is ${market.etfFlowDirection}, net ${Math.round(market.etfNetFlowUsd).toLocaleString("en-US")} USD.`);
+  }
+
+  if (market.macroRiskLabel !== "Calm") {
+    const nextMacroEvent = market.macroEvents.find((event) => event.daysFromNow >= 0);
+    rationale.push(
+      nextMacroEvent
+        ? `Macro calendar risk is ${market.macroRiskLabel.toLowerCase()} because ${nextMacroEvent.events
+            .slice(0, 2)
+            .join(", ")} is scheduled ${macroTiming(nextMacroEvent)}.`
+        : `Macro calendar risk is ${market.macroRiskLabel.toLowerCase()}.`,
+    );
   }
 
   return {
@@ -1278,15 +1454,16 @@ function buildRebalanceDecisions(
     });
   }
 
-  if (market.volatilityLabel === "Elevated" || market.etfFlowDirection === "outflow") {
+  if (market.volatilityLabel === "Elevated" || market.etfFlowDirection === "outflow" || market.macroRiskLabel === "Event Risk") {
     decisions.push({
       id: "market-protection",
       action: "hold",
       title: "Protective monitor armed",
-      detail: `Market pulse is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} SoDEX volatility and ${market.etfFlowDirection} ETF flow.`,
+      detail: `Market pulse is ${market.moodLabel.toLowerCase()} with ${market.volatilityLabel.toLowerCase()} SoDEX volatility, ${market.etfFlowDirection} ETF flow, and ${market.macroRiskLabel.toLowerCase()} macro risk.`,
       evidence: [
         `SoDEX average move ${market.sodexAverageMovePct}%`,
         `ETF net flow ${formatUsdForText(market.etfNetFlowUsd)}`,
+        `Macro risk ${market.macroRiskScore}/100`,
       ],
       source: "SoSoValue + SoDEX market pulse",
       impact: "protective" as const,
@@ -1354,6 +1531,19 @@ function buildAlerts(
     });
   }
 
+  const nextMacroEvent = market.macroEvents.find((event) => event.daysFromNow >= 0);
+  if (nextMacroEvent && market.macroRiskLabel !== "Calm") {
+    alerts.push({
+      id: "macro-calendar-risk",
+      level: market.macroRiskLabel === "Event Risk" ? "warning" : "watch",
+      title: "Macro event risk",
+      detail: `${nextMacroEvent.events.slice(0, 2).join(", ")} is scheduled ${macroTiming(
+        nextMacroEvent,
+      )}; strategy confidence is adjusted before activation.`,
+      trigger: "SoSoValue macro calendar",
+    });
+  }
+
   for (const source of sources) {
     if (source.status === "error" || source.status === "missing_key" || source.status === "degraded") {
       alerts.push({
@@ -1372,7 +1562,7 @@ function buildAlerts(
       level: "info",
       title: "No active alert",
       detail: "The simulated strategy is inside the selected risk, TVL, APY, and market-stress thresholds.",
-      trigger: "all wave 2 monitors",
+      trigger: "all Wave 3 monitors",
     });
   }
 
@@ -1382,12 +1572,26 @@ function buildAlerts(
 function buildAnalytics(strategy: YieldPilotStrategy, amountUsd: number, market: MarketPulse): StrategyAnalytics {
   const projectedAnnualYieldUsd = (amountUsd * strategy.estimatedApy) / 100;
   const stressMultiplier =
-    market.volatilityLabel === "Elevated" ? 0.18 : market.etfFlowDirection === "outflow" ? 0.12 : 0.07;
+    market.volatilityLabel === "Elevated"
+      ? 0.18
+      : market.macroRiskLabel === "Event Risk"
+        ? 0.15
+        : market.etfFlowDirection === "outflow"
+          ? 0.12
+          : market.macroRiskLabel === "Watch"
+            ? 0.1
+            : 0.07;
   const stressLossPct = round(clamp((strategy.riskScore / 100) * stressMultiplier * 100, 1.5, 22), 2);
   const uniqueChains = new Set(strategy.allocation.map((item) => item.chain)).size;
   const diversificationScore = clamp(Math.round(uniqueChains * 18 + strategy.allocation.length * 12), 0, 100);
   const confidenceScore = clamp(
-    Math.round(100 - strategy.riskScore * 0.55 + diversificationScore * 0.25 + (market.moodScore - 50) * 0.2),
+    Math.round(
+      100 -
+        strategy.riskScore * 0.55 +
+        diversificationScore * 0.25 +
+        (market.moodScore - 50) * 0.2 -
+        market.macroRiskScore * 0.12,
+    ),
     0,
     100,
   );
@@ -1400,7 +1604,7 @@ function buildAnalytics(strategy: YieldPilotStrategy, amountUsd: number, market:
     confidenceScore,
     diversificationScore,
     backtestNote:
-      "Local Wave 2 backtest proxy compares the current allocation against synthetic recent risk states from live APY, TVL, ETF flow, SoDEX volatility, and source health. It is simulation evidence, not realized performance.",
+      "Local Wave 3 backtest proxy compares the current allocation against synthetic recent risk states from live APY, TVL, ETF flow, macro calendar risk, SoDEX volatility, and source health. It is simulation evidence, not realized performance.",
   };
 }
 
@@ -1466,14 +1670,17 @@ export async function buildYieldPilotMarket(
     sourceStatuses.push({
       name: "DefiLlama Yields",
       status: "live",
-      detail: `${opportunities.length} risk-filtered yield pools are available.`,
+      detail: `${DEFILLAMA_POOLS_CONFIG.notice ? `${DEFILLAMA_POOLS_CONFIG.notice} ` : ""}${opportunities.length} risk-filtered yield pools are available.`,
       updatedAt: new Date().toISOString(),
     });
   } else {
     sourceStatuses.push({
       name: "DefiLlama Yields",
       status: "error",
-      detail: sanitizeSecretBearingError(opportunitiesResult.reason instanceof Error ? opportunitiesResult.reason.message : "Yield fetch failed.", "DefiLlama"),
+      detail: sanitizeSecretBearingError(
+        `${DEFILLAMA_POOLS_CONFIG.notice ? `${DEFILLAMA_POOLS_CONFIG.notice} ` : ""}${opportunitiesResult.reason instanceof Error ? opportunitiesResult.reason.message : "Yield fetch failed."}`,
+        "DefiLlama",
+      ),
     });
   }
 
@@ -1489,6 +1696,7 @@ export async function buildYieldPilotMarket(
           news: [] as NewsItem[],
           etfFlows: [] as EtfFlowPoint[],
           indexes: [] as SosoIndexSnapshot[],
+          macroEvents: [] as MacroEvent[],
         };
 
   const sodex =
@@ -1505,7 +1713,7 @@ export async function buildYieldPilotMarket(
 
   sourceStatuses.push(soso.source, sodex.source);
 
-  const market = buildMarketPulse(soso.news, soso.etfFlows, sodex.tickers, soso.indexes);
+  const market = buildMarketPulse(soso.news, soso.etfFlows, sodex.tickers, soso.indexes, soso.macroEvents);
   const strategy = buildStrategy(goal, amountUsd, opportunities, market, constraints);
   const openAi = await getOpenAiInsight(strategy, market, opportunities);
   sourceStatuses.push(openAi.source);
@@ -1536,7 +1744,7 @@ export async function buildYieldPilotMarket(
     opportunities,
     market,
     riskEvents,
-    wave2: {
+    wave3: {
       snapshots: buildSnapshots(strategy, amountUsd, market, generatedAt),
       riskHistory: buildRiskHistory(strategy, market),
       alerts,

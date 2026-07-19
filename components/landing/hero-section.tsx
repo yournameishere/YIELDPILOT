@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AgentParticleCanvas } from "./agent-particle-canvas";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const VERBS = ["DISCOVER", "SCORE", "ALLOCATE", "EXIT", "PROTECT"];
 
@@ -10,18 +11,20 @@ const VERBS = ["DISCOVER", "SCORE", "ALLOCATE", "EXIT", "PROTECT"];
 export function HeroSection() {
   const [verbIdx, setVerbIdx] = useState(0);
   const [visible, setVisible] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => { setVisible(true); }, []);
 
   useEffect(() => {
+    if (reducedMotion) return;
     const id = setInterval(() => setVerbIdx(v => (v + 1) % VERBS.length), 640);
     return () => clearInterval(id);
-  }, []);
+  }, [reducedMotion]);
 
 
 
   return (
-    <section className="relative min-h-screen flex flex-col justify-center overflow-hidden grid-bg pt-[88px]">
+    <section className="relative min-h-[100svh] flex flex-col justify-center overflow-hidden grid-bg pt-[88px]">
       {/* Particle canvas — right half of hero, full height, behind content */}
       <div className="absolute inset-y-0 right-0 w-full lg:w-[55%] pointer-events-none z-0">
         <AgentParticleCanvas className="w-full h-full" />
@@ -43,39 +46,33 @@ export function HeroSection() {
           <div>
             {/* Giant headline */}
             <div
-              className={`transition-all duration-700 delay-100 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
+              className={`transition-[opacity,transform] duration-700 delay-100 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
             >
               {/* Line 1 */}
               <div className="overflow-hidden">
                 <p className="font-mono text-[11px] tracking-[0.2em] text-[#2196f3] mb-4">
-                  - YIELDPILOT v2.0 · AUTONOMOUS DEFI YIELD MANAGER
+                  - YIELDPILOT v3.0 · AUTONOMOUS DEFI YIELD MANAGER
                 </p>
               </div>
 
-              {/* Big headline */}
-              <h1 className="font-display text-[clamp(4rem,14vw,12rem)] leading-[0.88] tracking-tight text-[#f2ede6] uppercase">
-                YIELDS THAT
-              </h1>
-
-              {/* Animated verb */}
-              <div className="relative overflow-hidden h-[clamp(4rem,14vw,12rem)] leading-[0.88]">
-                <h1
-                  key={verbIdx}
-                  className="font-display text-[clamp(4rem,14vw,12rem)] leading-[0.88] tracking-tight text-[#2196f3] uppercase absolute inset-0"
-                  style={{ animation: "fade-up 0.1s ease forwards" }}
-                >
-                  {VERBS[verbIdx]}
-                </h1>
-              </div>
-
-              <h1 className="font-display text-[clamp(4rem,14vw,12rem)] leading-[0.88] tracking-tight uppercase text-[#f2ede6]">
-                AUTONOMOUSLY
+              <h1 className="font-display text-6xl sm:text-8xl lg:text-9xl xl:text-[10rem] leading-[1.02] text-[#f2ede6] uppercase">
+                <span className="block">YIELDS THAT</span>
+                <span className="relative block overflow-hidden h-16 sm:h-24 lg:h-32 xl:h-40 leading-[1.02] text-[#2196f3]">
+                  <span
+                    key={verbIdx}
+                    className="absolute inset-0"
+                    style={{ animation: reducedMotion ? "none" : "fade-up 0.1s ease forwards" }}
+                  >
+                    {VERBS[verbIdx]}
+                  </span>
+                </span>
+                <span className="block">AUTONOMOUSLY</span>
               </h1>
             </div>
 
             {/* Subtext */}
             <div
-              className={`mt-14 transition-all duration-700 delay-300 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
+              className={`mt-14 transition-[opacity,transform] duration-700 delay-300 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
             >
               <p className="text-base text-[#5a5a5a] leading-relaxed max-w-xl">
                 YieldPilot AI scans live DeFi yields, market mood, ETF flows, SoDEX activity, and protocol risk to build safer simulated strategies before real capital moves.
@@ -120,7 +117,7 @@ export function HeroSection() {
 
       {/* ── BOTTOM TICKER — full viewport width ─── */}
       <div
-        className={`absolute bottom-0 left-0 right-0 border-t border-[#1e1e1e] py-5 transition-all duration-700 delay-700 ${visible ? "opacity-100" : "opacity-0"}`}
+        className={`absolute bottom-0 left-0 right-0 border-t border-[#1e1e1e] py-5 transition-opacity duration-700 delay-700 ${visible ? "opacity-100" : "opacity-0"}`}
       >
         <div className="overflow-hidden">
           <div className="marquee-fast whitespace-nowrap flex gap-16">
@@ -134,7 +131,7 @@ export function HeroSection() {
                   "SIMULATION-FIRST EXECUTION",
                   "AI REASONING FEED",
                   "PROTECTIVE EXIT LOGIC",
-                  "WAVE 2 LOCAL MVP",
+                  "WAVE 3 PRODUCTION SIM",
                 ].map(item => (
                   <span key={item} className="flex items-center gap-3 font-mono text-[10px] tracking-[0.2em] text-[#3a3a3a]">
                     <span className="w-1 h-1 bg-[#2196f3] inline-block shrink-0" />

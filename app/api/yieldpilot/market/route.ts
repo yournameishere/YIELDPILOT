@@ -12,10 +12,23 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const MARKET_CACHE_TTL_MS = 20_000;
+const MAX_MARKET_CACHE_ENTRIES = 96;
 const marketResponseCache = new Map<
   string,
   { expiresAt: number; payload: Awaited<ReturnType<typeof buildYieldPilotMarket>> }
 >();
+
+function pruneMarketResponseCache(now = Date.now()) {
+  for (const [key, entry] of marketResponseCache) {
+    if (entry.expiresAt <= now) marketResponseCache.delete(key);
+  }
+
+  while (marketResponseCache.size > MAX_MARKET_CACHE_ENTRIES) {
+    const oldestKey = marketResponseCache.keys().next().value;
+    if (!oldestKey) break;
+    marketResponseCache.delete(oldestKey);
+  }
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,10 +36,12 @@ export async function GET(request: Request) {
   const amountUsd = normalizeAmount(searchParams.get("amount"));
   const constraints = normalizeConstraints(searchParams, goal);
   const cacheKey = JSON.stringify({ goal, amountUsd, constraints });
+  const now = Date.now();
+  pruneMarketResponseCache(now);
   const cached = marketResponseCache.get(cacheKey);
 
   try {
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > now) {
       return NextResponse.json(cached.payload, {
         headers: {
           "Cache-Control": "no-store",
@@ -40,6 +55,7 @@ export async function GET(request: Request) {
       expiresAt: Date.now() + MARKET_CACHE_TTL_MS,
       payload,
     });
+    pruneMarketResponseCache();
 
     return NextResponse.json(payload, {
       headers: {

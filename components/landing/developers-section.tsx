@@ -8,11 +8,14 @@ const REPOSITORY_URL = process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim();
 const TABS = [
   {
     label: "ENV",
-    code: `SOSOVALUE_API_KEY=your_sosovalue_key
-OPENAI_API_KEY=your_openai_key
+    code: `SOSOVALUE_API_KEY=
+OPENAI_API_KEY=
 SODEX_ENV=testnet
 SODEX_SPOT_ENDPOINT=https://testnet-gw.sodex.dev/api/v1/spot
-NEXT_PUBLIC_REPOSITORY_URL=https://github.com/yournameishere/YIELDPILOT
+SOSOVALUE_BASE_URL=https://openapi.sosovalue.com/openapi/v1
+OPENAI_BASE_URL=https://api.openai.com/v1
+DEFILLAMA_POOLS_URL=https://yields.llama.fi/pools
+NEXT_PUBLIC_REPOSITORY_URL=
 
 # Keep credentials server-side only`,
   },
@@ -24,7 +27,7 @@ NEXT_PUBLIC_REPOSITORY_URL=https://github.com/yournameishere/YIELDPILOT
 
 // Server fetches:
 // - DefiLlama yield pools
-// - SoSoValue hot news, ETF flows, indexes
+// - SoSoValue hot news, ETF flows, indexes, macro events
 // - SoDEX public spot tickers`,
   },
   {
@@ -55,14 +58,14 @@ activity.log({
   allocation: strategy.allocation
 })
 
-// No custody or contract calls in Wave 2`,
+// No custody or contract calls in Wave 3 simulation mode`,
   },
 ];
 
 const SDK_PROPS = [
   { k: "Typed engine",       v: "The market response, allocations, risk events, alerts, analytics, and source health are all typed." },
   { k: "Server-side secrets", v: "SoSoValue API access stays in the API route and never ships to the browser." },
-  { k: "Real market inputs", v: "APY, TVL, hot news, ETF flow, SoSoValue Indexes, and SoDEX ticker data drive the strategy." },
+  { k: "Real market inputs", v: "APY, TVL, hot news, ETF flow, macro events, SoSoValue Indexes, and SoDEX ticker data drive the strategy." },
   { k: "Persistent local mode", v: "Hackathon judges can inspect saved snapshots, alerts, and protective exits without real funds." },
 ];
 
@@ -93,10 +96,10 @@ export function DevelopersSection() {
 
         {/* Header row */}
         <div
-          className={`border-b border-[#1e1e1e] py-8 transition-all duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
+          className={`border-b border-[#1e1e1e] py-8 transition-opacity duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
         >
           <span className="sys-tag mb-3 block">DEVELOPER VIEW</span>
-          <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">
+          <h2 className="font-display text-6xl lg:text-8xl leading-[1.02] text-[#f2ede6]">
             BUILT FOR<br />
             <span style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>BUILDERS</span>
           </h2>
@@ -107,14 +110,14 @@ export function DevelopersSection() {
           <div className="border-r border-[#1e1e1e]">
             <div className="border-b border-[#1e1e1e] p-6">
               <p className="text-sm text-[#5a5a5a] leading-relaxed max-w-md">
-                The MVP is a full Next.js app with a server-side market engine, custom strategy constraints, local portfolio tracking, source health reporting, and simulation execution for Wave 2.
+                The app is a full Next.js production simulation with a server-side market engine, custom strategy constraints, local portfolio tracking, source health reporting, and Wave 3 macro-risk overlay.
               </p>
             </div>
 
             {SDK_PROPS.map((p, i) => (
               <div
                 key={p.k}
-                className={`border-b border-[#1e1e1e] px-6 py-5 row-hover transition-all duration-400 ${
+                className={`border-b border-[#1e1e1e] px-6 py-5 row-hover transition-colors duration-400 ${
                   vis ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"
                 }`}
                 style={{ transitionDelay: `${i * 60 + 100}ms` }}
@@ -145,7 +148,7 @@ export function DevelopersSection() {
 
           {/* Right — code block */}
           <div
-            className={`flex flex-col transition-all duration-600 delay-200 ${
+            className={`flex flex-col transition-[opacity,transform] duration-600 delay-200 ${
               vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
             }`}
           >
@@ -194,7 +197,7 @@ export function DevelopersSection() {
 
             {/* Footer */}
             <div className="border-t border-[#1e1e1e] px-6 py-3 flex items-center justify-between bg-[#080808]">
-              <span className="font-mono text-[10px] text-[#3a3a3a]">yieldpilot-engine · wave-2 · local-mvp</span>
+              <span className="font-mono text-[10px] text-[#3a3a3a]">yieldpilot-engine · wave-3 · production-sim</span>
               <div className="flex items-center gap-2">
                 <span className="status-pulse w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block" />
                 <span className="font-mono text-[10px] text-[#22c55e]">STABLE</span>

@@ -1,31 +1,45 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import type { RiskHistoryPoint, YieldPilotMarketResponse } from "@/lib/yieldpilot/types";
 
 function AnimCounter({
   end,
   suffix = "",
   prefix = "",
+  decimals = 0,
 }: {
   end: number;
   suffix?: string;
   prefix?: string;
+  decimals?: number;
 }) {
   const [n, setN] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const done = useRef(false);
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    done.current = false;
+    setN(reducedMotion ? end : 0);
+  }, [end, reducedMotion]);
 
   useEffect(() => {
     const obs = new IntersectionObserver(
       ([e]) => {
         if (e.isIntersecting && !done.current) {
           done.current = true;
+          if (reducedMotion) {
+            setN(end);
+            return;
+          }
           const start = performance.now();
           const dur = 1800;
           const tick = (now: number) => {
             const p = Math.min((now - start) / dur, 1);
             const ease = 1 - Math.pow(1 - p, 3);
-            setN(Math.floor(ease * end));
+            setN(Number((ease * end).toFixed(decimals)));
             if (p < 1) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
@@ -35,69 +49,51 @@ function AnimCounter({
     );
     if (ref.current) obs.observe(ref.current);
     return () => obs.disconnect();
-  }, [end]);
+  }, [decimals, end, reducedMotion]);
 
   return (
-    <div
-      ref={ref}
-      className="font-display text-[clamp(2rem,5vw,4rem)] leading-none tracking-tight text-[#f2ede6] tabular-nums"
-    >
+    <div ref={ref} className="font-display text-3xl sm:text-4xl lg:text-5xl leading-none text-[#f2ede6] tabular-nums">
       {prefix}
-      {n.toLocaleString()}
+      {n.toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      })}
       {suffix}
     </div>
   );
 }
 
-// Each check: 0 = healthy, 1 = watch, 2 = exit trigger
-const UPTIME_DATA: number[] = (() => {
-  const d: number[] = [];
-  for (let i = 0; i < 90; i++) {
-    if (i === 51) d.push(2);
-    else if (i === 22 || i === 63 || i === 77) d.push(1);
-    else d.push(0);
-  }
-  return d;
-})();
-
-const STATUS_COLOR: Record<number, string> = {
-  0: "#22c55e",
-  1: "#f59e0b",
-  2: "#ef4444",
+type MetricSnapshot = {
+  estimatedApy: number;
+  confidenceScore: number;
+  liveSources: number;
+  sourceCount: number;
+  custodyRisk: number;
+  riskTrend: RiskHistoryPoint[];
+  status: "loading" | "live" | "error";
+  detail: string;
 };
 
-const METRICS = [
-  {
-    end: 14,
-    suffix: "",
-    label: "ESTIMATED APY",
-    sub: "balanced simulation target",
-    display: "LIVE",
-  },
-  {
-    end: 84,
-    suffix: "",
-    label: "PROTECTION SCORE",
-    sub: "risk engine confidence",
-    display: "84/100",
-  },
-  {
-    end: 3,
-    suffix: "",
-    label: "LIVE DATA SOURCES",
-    sub: "DefiLlama, SoSoValue, SoDEX",
-  },
-  {
-    end: 0,
-    suffix: "",
-    label: "CUSTODY RISK",
-    sub: "Wave 2 simulation mode",
-  },
-];
+function riskColor(score: number) {
+  if (score < 34) return "#22c55e";
+  if (score < 62) return "#f59e0b";
+  return "#ef4444";
+}
 
 export function MetricsSection() {
   const [vis, setVis] = useState(false);
   const [time, setTime] = useState("");
+  const [snapshot, setSnapshot] = useState<MetricSnapshot>({
+    estimatedApy: 0,
+    confidenceScore: 0,
+    liveSources: 0,
+    sourceCount: 0,
+    custodyRisk: 0,
+    riskTrend: [],
+    status: "loading",
+    detail: "Waiting for live market scan.",
+  });
+  const hasLoaded = useRef(false);
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -119,19 +115,95 @@ export function MetricsSection() {
     return () => obs.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!vis || hasLoaded.current) return;
+
+    hasLoaded.current = true;
+    const controller = new AbortController();
+
+    async function loadMetrics() {
+      try {
+        const response = await fetch("/api/yieldpilot/market?goal=balanced&amount=1000", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+          throw new Error(payload?.detail ?? "Metrics scan failed.");
+        }
+
+        const payload = (await response.json()) as YieldPilotMarketResponse;
+        if (controller.signal.aborted) return;
+
+        setSnapshot({
+          estimatedApy: payload.portfolio.estimatedApy,
+          confidenceScore: payload.wave3.analytics.confidenceScore,
+          liveSources: payload.sources.filter((source) => source.status === "live").length,
+          sourceCount: payload.sources.length,
+          custodyRisk: payload.mode === "simulation" ? 0 : 100,
+          riskTrend: payload.wave3.riskHistory,
+          status: "live",
+          detail: `Updated from ${payload.sources.length} configured market sources.`,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setSnapshot((current) => ({
+          ...current,
+          status: "error",
+          detail: error instanceof Error ? error.message : "Metrics scan failed.",
+        }));
+      }
+    }
+
+    void loadMetrics();
+    return () => controller.abort();
+  }, [vis]);
+
+  const metrics = [
+    {
+      end: snapshot.estimatedApy,
+      suffix: "%",
+      decimals: 2,
+      label: "ESTIMATED APY",
+      sub: snapshot.status === "live" ? "balanced live market scan" : snapshot.detail,
+    },
+    {
+      end: snapshot.confidenceScore,
+      suffix: "/100",
+      decimals: 0,
+      label: "CONFIDENCE SCORE",
+      sub: "risk engine confidence",
+    },
+    {
+      end: snapshot.liveSources,
+      suffix: `/${snapshot.sourceCount}`,
+      decimals: 0,
+      label: "LIVE DATA SOURCES",
+      sub: "configured provider health",
+    },
+    {
+      end: snapshot.custodyRisk,
+      suffix: "/100",
+      decimals: 0,
+      label: "CUSTODY RISK",
+      sub: "derived from simulation-only mode",
+    },
+  ];
+
   return (
     <section id="metrics" ref={ref} className="relative border-t border-[#1e1e1e] scroll-mt-[88px]">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
 
         {/* Header */}
         <div
-          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-all duration-500 ${
+          className={`border-b border-[#1e1e1e] py-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 transition-opacity duration-500 ${
             vis ? "opacity-100" : "opacity-0"
           }`}
         >
           <div>
             <span className="sys-tag mb-3 block">PORTFOLIO METRICS</span>
-            <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">
+            <h2 className="font-display text-6xl lg:text-8xl leading-[1.02] text-[#f2ede6]">
               SIGNALS YOU
               <br />
               <span
@@ -143,28 +215,24 @@ export function MetricsSection() {
           </div>
           <div className="flex items-center gap-3 font-mono text-[10px] text-[#3a3a3a]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block animate-pulse" />
-            <span className="text-[#22c55e]">LIVE</span>
+            <span className={snapshot.status === "error" ? "text-[#ef4444]" : snapshot.status === "live" ? "text-[#22c55e]" : "text-[#f59e0b]"}>
+              {snapshot.status.toUpperCase()}
+            </span>
             <span className="tabular-nums">{time}</span>
           </div>
         </div>
 
         {/* Metrics grid — each cell has a fixed min-height and overflow-hidden to prevent bleed */}
         <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-[#1e1e1e]">
-          {METRICS.map((m, i) => (
+          {metrics.map((m, i) => (
             <div
               key={m.label}
-              className={`border-r border-[#1e1e1e] last:border-r-0 border-b lg:border-b-0 p-6 lg:p-8 overflow-hidden transition-all duration-500 ${
+              className={`border-r border-[#1e1e1e] last:border-r-0 border-b lg:border-b-0 p-6 lg:p-8 overflow-hidden transition-[opacity,transform] duration-500 ${
                 vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
               }`}
               style={{ transitionDelay: `${i * 80}ms` }}
             >
-              {m.display ? (
-                <div className="font-display text-[clamp(2rem,5vw,4rem)] leading-none tracking-tight text-[#f2ede6] tabular-nums">
-                  {m.display}
-                </div>
-              ) : (
-                <AnimCounter end={m.end} suffix={m.suffix} />
-              )}
+              <AnimCounter end={m.end} suffix={m.suffix} decimals={m.decimals} />
               <div className="mt-3 font-mono text-[10px] text-[#2196f3] tracking-[0.18em]">
                 {m.label}
               </div>
@@ -179,27 +247,21 @@ export function MetricsSection() {
         <div className="py-6">
           <div className="flex items-center justify-between mb-3">
             <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest uppercase">
-              Risk trend last 90 checks
+              Risk trend from latest live scan
             </span>
-            <span className="font-mono text-[10px] text-[#22c55e] tracking-widest">
-              1 EXIT SIMULATED
+            <span className={`font-mono text-[10px] ${snapshot.riskTrend.some((point) => point.riskScore >= 70) ? "text-[#ef4444]" : "text-[#22c55e]"} tracking-widest`}>
+              {snapshot.riskTrend.some((point) => point.riskScore >= 70) ? "EXIT WATCH" : "NO EXIT TRIGGER"}
             </span>
           </div>
           <div className="flex gap-[3px] items-end h-10">
-            {UPTIME_DATA.map((status, i) => (
+            {snapshot.riskTrend.map((point, i) => (
               <div
                 key={i}
-                title={
-                  status === 0
-                    ? "Healthy"
-                    : status === 1
-                    ? "Watch"
-                    : "Protective exit"
-                }
+                title={`${point.label}: risk ${point.riskScore}/100`}
                 className="flex-1 rounded-sm transition-opacity hover:opacity-80 cursor-default"
                 style={{
-                  height: status === 2 ? "100%" : status === 1 ? "80%" : "70%",
-                  background: STATUS_COLOR[status],
+                  height: `${Math.max(point.riskScore, 8)}%`,
+                  background: riskColor(point.riskScore),
                   alignSelf: "flex-end",
                   opacity: vis ? 1 : 0,
                   transition: `opacity 0.4s ease ${i * 8}ms, height 0.3s ease`,
@@ -207,6 +269,9 @@ export function MetricsSection() {
               />
             ))}
           </div>
+          {snapshot.riskTrend.length === 0 && (
+            <p className="mt-3 text-sm text-[#5a5a5a]">{snapshot.detail}</p>
+          )}
           <div className="flex justify-between mt-2">
             <span className="font-mono text-[9px] text-[#3a3a3a]">90 days</span>
             <span className="font-mono text-[9px] text-[#3a3a3a]">Today</span>

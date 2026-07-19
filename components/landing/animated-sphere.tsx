@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 export function AnimatedSphere() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,8 +82,10 @@ export function AnimatedSphere() {
         ctx.fillText(point.char, point.x, point.y);
       });
 
-      time += 0.02;
-      frameRef.current = requestAnimationFrame(render);
+      if (!reducedMotion) {
+        time += 0.02;
+        frameRef.current = requestAnimationFrame(render);
+      }
     };
 
     render();
@@ -90,7 +94,7 @@ export function AnimatedSphere() {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(frameRef.current);
     };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <canvas

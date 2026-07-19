@@ -34,14 +34,14 @@ export function Navigation() {
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        className={`fixed top-0 left-0 right-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-300 ${
           scrolled ? "bg-[#050505]/95 backdrop-blur-sm border-b border-[#1e1e1e]" : "bg-transparent"
         }`}
       >
         {/* Top status bar */}
         <div className="border-b border-[#1e1e1e] px-6 lg:px-12 h-8 flex items-center justify-between">
           <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest uppercase">
-            SYS:YIELDPILOT-AI &nbsp;/&nbsp; WAVE 2 LOCAL MVP
+            SYS:YIELDPILOT-AI &nbsp;/&nbsp; WAVE 3 PRODUCTION SIM
           </span>
           <div className="hidden md:flex items-center gap-6">
             <span className="font-mono text-[10px] text-[#3a3a3a]">
@@ -96,6 +96,9 @@ export function Navigation() {
             onClick={() => setOpen(!open)}
             className="md:hidden text-[#f2ede6] p-1"
             aria-label="Toggle menu"
+            aria-expanded={open}
+            aria-controls="mobile-navigation"
+            type="button"
           >
             {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -104,8 +107,10 @@ export function Navigation() {
 
       {/* Mobile menu */}
       <div
+        id="mobile-navigation"
+        aria-hidden={!open}
         className={`fixed inset-0 z-40 bg-[#050505] flex flex-col transition-opacity duration-300 ${
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          open ? "visible opacity-100 pointer-events-auto" : "invisible opacity-0 pointer-events-none"
         }`}
         style={{ paddingTop: "88px" }}
       >
@@ -115,7 +120,8 @@ export function Navigation() {
               key={link.name}
               href={link.href}
               onClick={() => setOpen(false)}
-              className={`border-b border-[#1e1e1e] px-8 py-7 font-display text-5xl tracking-wider text-[#f2ede6] hover:text-[#2196f3] transition-all duration-300 flex items-center justify-between ${
+              tabIndex={open ? 0 : -1}
+              className={`border-b border-[#1e1e1e] px-8 py-7 font-display text-5xl tracking-wider text-[#f2ede6] hover:text-[#2196f3] transition-[opacity,transform,color] duration-300 flex items-center justify-between ${
                 open ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"
               }`}
               style={{ transitionDelay: open ? `${i * 60}ms` : "0ms" }}
@@ -131,6 +137,7 @@ export function Navigation() {
           <a
             href="#console"
             onClick={() => setOpen(false)}
+            tabIndex={open ? 0 : -1}
             className="w-full block text-center font-mono text-sm tracking-widest bg-[#2196f3] text-[#050505] py-5 font-semibold"
           >
             START_NOW -&gt;

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const REPOSITORY_URL = process.env.NEXT_PUBLIC_REPOSITORY_URL?.trim();
 
 function DotWaveCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -13,7 +15,7 @@ function DotWaveCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let raf: number;
+    let raf = 0;
     let t = 0;
 
     const SPACING = 28;
@@ -49,8 +51,10 @@ function DotWaveCanvas() {
         }
       }
 
-      t += 0.016;
-      raf = requestAnimationFrame(draw);
+      if (!reducedMotion) {
+        t += 0.016;
+        raf = requestAnimationFrame(draw);
+      }
     };
 
     draw();
@@ -58,7 +62,7 @@ function DotWaveCanvas() {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [reducedMotion]);
 
   return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />;
 }
@@ -80,7 +84,7 @@ export function CtaSection() {
     <section className="relative border-t border-[#1e1e1e]">
       <div
         ref={ref}
-        className={`max-w-[1400px] mx-auto px-6 lg:px-12 transition-all duration-700 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+        className={`max-w-[1400px] mx-auto px-6 lg:px-12 transition-[opacity,transform] duration-700 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
       >
         {/* Giant CTA block */}
         <div className="border border-[#1e1e1e] relative overflow-hidden my-12 lg:my-16">
@@ -107,14 +111,14 @@ export function CtaSection() {
             </div>
 
             {/* Headline */}
-            <h2 className="font-display text-[clamp(3.5rem,12vw,10rem)] leading-[0.88] tracking-tight text-[#f2ede6] uppercase mb-4">
+            <h2 className="font-display text-6xl sm:text-8xl lg:text-9xl xl:text-[9rem] leading-[1.02] text-[#f2ede6] uppercase mb-4">
               YOUR AI<br />
               <span className="text-[#2196f3]">YIELD</span><br />
               PILOT IS LIVE.
             </h2>
 
             <p className="font-mono text-sm text-[#5a5a5a] mb-12 max-w-lg mx-auto leading-relaxed">
-              Run a complete Wave 2 demo: tune custom constraints, analyze live markets, save local portfolio snapshots, activate a strategy, and test a protective exit.
+              Run a complete Wave 3 simulation: tune custom constraints, analyze live markets, inspect macro risk, save local portfolio snapshots, activate a strategy, and test a protective exit.
             </p>
 
             {/* CTAs */}
@@ -140,7 +144,7 @@ export function CtaSection() {
             {/* Social proof row */}
             <div className="flex items-center justify-center gap-8 mt-10 flex-wrap">
               {[
-                { v: "3",      l: "live sources" },
+                { v: "4",      l: "monitored sources" },
                 { v: "0",      l: "funds moved" },
                 { v: "5",      l: "strategy goals" },
                 { v: "AI",     l: "risk memo" },

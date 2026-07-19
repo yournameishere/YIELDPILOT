@@ -1,9 +1,10 @@
+/* Hallmark - app console hardening: operational dark UI, blue risk accent, mobile overflow guarded */
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Barlow", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "Courier New", monospace;
-  --font-display: "Barlow Condensed", system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Courier New", monospace;
+  --font-display: var(--font-geist-sans), system-ui, sans-serif;
 
   /* True black base */
   --color-background: #050505;
@@ -79,6 +80,7 @@
     background: var(--color-background);
     color: var(--color-foreground);
     scroll-behavior: smooth;
+    overflow-x: clip;
   }
 
   body {
@@ -88,7 +90,7 @@
     font-weight: 400;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   /* Subtle scanlines */
@@ -117,7 +119,7 @@
 .font-display {
   font-family: var(--font-display);
   font-weight: 700;
-  font-style: italic;
+  font-style: normal;
 }
 
 .font-display-normal {
@@ -255,4 +257,25 @@
     linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
   background-size: 80px 80px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .marquee,
+  .marquee-fast,
+  .blink,
+  .scan-line,
+  .status-pulse,
+  .amber-glow {
+    animation: none !important;
+    transform: none !important;
+  }
 }

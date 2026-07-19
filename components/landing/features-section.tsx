@@ -8,7 +8,7 @@ const FEATURES = [
     tag: "DISCOVERY",
     title: "LIVE YIELD\nSCANNER",
     desc: "Scans live DeFi APY, TVL, stablecoin exposure, chain, and confidence data. The app avoids pools that fail the selected risk profile before recommendations are shown.",
-    stat: { v: "8", l: "ranked pools" },
+    stat: { v: "LIVE", l: "pool scan" },
   },
   {
     id: "02",
@@ -49,7 +49,7 @@ function FeatureRow({ f, index }: { f: typeof FEATURES[0]; index: number }) {
   return (
     <div
       ref={ref}
-      className={`group border-b border-[#1e1e1e] transition-all duration-500 row-hover ${
+      className={`group border-b border-[#1e1e1e] transition-[opacity,transform,background-color] duration-500 row-hover ${
         vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
       style={{ transitionDelay: `${index * 80}ms` }}
@@ -63,7 +63,7 @@ function FeatureRow({ f, index }: { f: typeof FEATURES[0]; index: number }) {
         {/* Tag + Title */}
         <div className="border-r border-[#1e1e1e] p-6 flex flex-col gap-3">
           <span className="sys-tag text-[9px]">{f.tag}</span>
-          <h3 className="font-display text-3xl lg:text-4xl leading-[0.9] text-[#f2ede6] group-hover:text-[#2196f3] transition-colors duration-300 whitespace-pre-line">
+          <h3 className="font-display text-3xl lg:text-4xl leading-[1.05] text-[#f2ede6] group-hover:text-[#2196f3] transition-colors duration-300 whitespace-pre-line">
             {f.title}
           </h3>
         </div>
@@ -102,7 +102,7 @@ export function FeaturesSection() {
         {/* Section header row */}
         <div
           ref={ref}
-          className={`grid grid-cols-[56px_1fr] lg:grid-cols-[56px_260px_1fr_160px] border-b border-[#1e1e1e] transition-all duration-500 ${
+          className={`grid grid-cols-[56px_1fr] lg:grid-cols-[56px_260px_1fr_160px] border-b border-[#1e1e1e] transition-opacity duration-500 ${
             vis ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -110,7 +110,7 @@ export function FeaturesSection() {
           <div className="col-span-2 lg:col-span-3 p-6 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
               <span className="sys-tag mb-4 block">CAPABILITIES</span>
-              <h2 className="font-display text-6xl lg:text-8xl text-[#f2ede6] leading-[0.88] tracking-tight">
+              <h2 className="font-display text-6xl lg:text-8xl text-[#f2ede6] leading-[1.02]">
                 WHAT YIELDPILOT<br />
                 <span className="text-[#3a3a3a]" style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>
                   CAN DO
@@ -118,7 +118,7 @@ export function FeaturesSection() {
               </h2>
             </div>
             <p className="font-mono text-[10px] text-[#3a3a3a] tracking-widest max-w-[200px] text-right hidden lg:block">
-              WAVE 2 MODULES &nbsp;/ &nbsp;LIVE DATA &nbsp;/ &nbsp;SIMULATION-FIRST
+              WAVE 3 MODULES &nbsp;/ &nbsp;LIVE DATA &nbsp;/ &nbsp;SIMULATION-FIRST
             </p>
           </div>
         </div>

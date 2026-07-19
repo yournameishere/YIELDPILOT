@@ -106,7 +106,7 @@ export function FooterSection() {
         {/* Bottom bar */}
         <div className="py-5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="font-mono text-[10px] text-[#3a3a3a]">
-            © 2026 YIELDPILOT AI. WAVE 2 LOCAL MVP.
+            © 2026 YIELDPILOT AI. WAVE 3 PRODUCTION SIM.
           </p>
           <div className="flex items-center gap-6">
             <span className="font-mono text-[10px] text-[#3a3a3a] tabular-nums">{time} UTC</span>

@@ -14,7 +14,7 @@ import { FooterSection } from "@/components/landing/footer-section";
 
 export default function Home() {
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#050505]">
+    <main className="relative min-h-[100svh] overflow-x-clip bg-[#050505]">
       <Navigation />
       <HeroSection />
       <YieldPilotConsole />

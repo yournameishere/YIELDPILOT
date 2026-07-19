@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "YieldPilot AI",
     short_name: "YieldPilot",
-    description: "Autonomous DeFi yield manager with live risk scoring and OpenAI strategy reasoning.",
+    description: "Autonomous DeFi yield manager with live risk scoring, macro calendar risk, and OpenAI strategy reasoning.",
     start_url: "/",
     display: "standalone",
     background_color: "#050505",

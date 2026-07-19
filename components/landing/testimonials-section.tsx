@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const TESTIMONIALS = [
   {
@@ -28,7 +29,7 @@ const TESTIMONIALS = [
     metricLabel: "NEWS FEED",
   },
   {
-    quote: "The app keeps all real execution in simulation for Wave 2, while local snapshots, alerts, and reasoning make the AI decision loop visible.",
+    quote: "The app keeps all real execution in simulation for Wave 3, while local snapshots, macro-aware alerts, and reasoning make the AI decision loop visible.",
     author: "Execution Mode",
     role: "Safety",
     company: "NO_CUSTODY",
@@ -47,6 +48,7 @@ export function TestimonialsSection() {
   const [fading, setFading] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const [vis, setVis] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -58,6 +60,7 @@ export function TestimonialsSection() {
   }, []);
 
   useEffect(() => {
+    if (reducedMotion) return;
     const id = setInterval(() => {
       setFading(true);
       setTimeout(() => {
@@ -66,7 +69,7 @@ export function TestimonialsSection() {
       }, 250);
     }, 5500);
     return () => clearInterval(id);
-  }, []);
+  }, [reducedMotion]);
 
   const t = TESTIMONIALS[active];
 
@@ -76,7 +79,7 @@ export function TestimonialsSection() {
 
         {/* Header */}
         <div
-          className={`border-b border-[#1e1e1e] py-8 flex items-end justify-between transition-all duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
+          className={`border-b border-[#1e1e1e] py-8 flex items-end justify-between transition-opacity duration-500 ${vis ? "opacity-100" : "opacity-0"}`}
         >
           <span className="sys-tag">DEMO SCENARIOS</span>
           <span className="font-mono text-[10px] text-[#3a3a3a]">
@@ -89,9 +92,9 @@ export function TestimonialsSection() {
           {/* Quote */}
           <div className="border-r border-[#1e1e1e] p-8 lg:p-12">
             <blockquote
-              className={`transition-all duration-250 ${fading ? "opacity-0 translate-y-2" : "opacity-100 translate-y-0"}`}
+              className={`transition-[opacity,transform] duration-250 ${fading ? "opacity-0 translate-y-2" : "opacity-100 translate-y-0"}`}
             >
-              <p className="font-display text-3xl lg:text-5xl leading-[0.95] tracking-tight text-[#f2ede6] mb-10">
+              <p className="font-display text-3xl lg:text-5xl leading-[1.05] text-[#f2ede6] mb-10">
                 &ldquo;{t.quote}&rdquo;
               </p>
               <footer className="flex items-center gap-4">
@@ -112,7 +115,7 @@ export function TestimonialsSection() {
           <div className="flex flex-col">
             {/* Metric */}
             <div
-              className={`flex-1 p-8 border-b border-[#1e1e1e] row-hover transition-all duration-250 ${fading ? "opacity-0" : "opacity-100"}`}
+              className={`flex-1 p-8 border-b border-[#1e1e1e] row-hover transition-[opacity,background-color] duration-250 ${fading ? "opacity-0" : "opacity-100"}`}
             >
               <span className="sys-tag text-[9px] mb-4 block">KEY_RESULT</span>
               <div className="font-display text-6xl text-[#2196f3]">{t.metric}</div>
@@ -125,7 +128,7 @@ export function TestimonialsSection() {
                 <button
                   key={i}
                   onClick={() => { setFading(true); setTimeout(() => { setActive(i); setFading(false); }, 250); }}
-                  className={`h-1 transition-all duration-300 ${
+                  className={`h-1 transition-[background-color,width] duration-300 ${
                     i === active ? "w-8 bg-[#2196f3]" : "w-2 bg-[#2e2e2e] hover:bg-[#5a5a5a]"
                   }`}
                 />

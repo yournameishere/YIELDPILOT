@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 interface Particle {
   x: number;
@@ -19,6 +20,7 @@ const WHITE  = "242,237,230";
 
 export function AgentParticleCanvas({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,7 +28,7 @@ export function AgentParticleCanvas({ className }: { className?: string }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animId: number;
+    let animId = 0;
     let W = 0, H = 0;
     let particles: Particle[] = [];
 
@@ -60,7 +62,7 @@ export function AgentParticleCanvas({ className }: { className?: string }) {
     let t = 0;
     const draw = () => {
       ctx.clearRect(0, 0, W, H);
-      t += 0.014;
+      if (!reducedMotion) t += 0.014;
 
       /* ── EDGES ── */
       for (let i = 0; i < particles.length; i++) {
@@ -156,7 +158,7 @@ export function AgentParticleCanvas({ className }: { className?: string }) {
         }
       }
 
-      animId = requestAnimationFrame(draw);
+      if (!reducedMotion) animId = requestAnimationFrame(draw);
     };
 
     resize();
@@ -165,7 +167,7 @@ export function AgentParticleCanvas({ className }: { className?: string }) {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
     return () => { cancelAnimationFrame(animId); ro.disconnect(); };
-  }, []);
+  }, [reducedMotion]);
 
   return (
     <canvas

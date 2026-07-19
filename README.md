@@ -9,8 +9,7 @@ The app is simulation-first. It never moves real funds. Wallet connection is app
 YieldPilot AI Wave 3 is complete, production-ready, and deployed on Vercel.
 
 - Production URL: https://yieldpilot-ai.vercel.app
-- Latest deployment URL: https://yieldpilot-4azupkdnq-nikkus-projects-d0d225f5.vercel.app
-- Vercel deployment ID: `dpl_Cq725FoTYak4uxdMkTac9BZTgVcR`
+ - Vercel deployment ID: `dpl_Cq725FoTYak4uxdMkTac9BZTgVcR`
 - Deployment target: production
 - Deployment state: ready
 - Final verification date: July 19, 2026
@@ -167,8 +166,7 @@ Response highlights:
 Current production deployment:
 
 - Production URL: https://yieldpilot-ai.vercel.app
-- Deployment URL: https://yieldpilot-4azupkdnq-nikkus-projects-d0d225f5.vercel.app
-- Deployment ID: `dpl_Cq725FoTYak4uxdMkTac9BZTgVcR`
+ 
 
 Required production environment variables:
 
